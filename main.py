@@ -130,6 +130,12 @@ def home():
 
 
 def background_worker():
+  # Invia un messaggio di notifica appena si avvia per confermare che è online
+  time.sleep(5)
+  invia_messaggio_telegram(
+      'SERVER ONLINE: Il bot di trading è stato riavviato e operativo!'
+  )
+
   schedule.every(15).minutes.do(controlla_notizie)
   schedule.every(1).hours.do(analizza_crypto)
 
