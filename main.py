@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import os
+import sys
 import time
 from threading import Thread
 import feedparser
@@ -11,6 +12,9 @@ import yfinance
 # --- CONFIGURAZIONE ---
 TOKEN = os.environ.get('TELEGRAM_TOKEN')
 CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID')
+
+# Memoria per evitare di inviare la stessa notizia due volte consecutive
+ULTIMO_LINK_INVIATO = ""
 
 # --- SERVER FLASK (PER RENDER) ---
 app_web = Flask('')
@@ -124,14 +128,21 @@ def analizza_impatto_notizia(titolo):
     else:
         return "Mercati Generali / Forex 🌐", sentiment_base
 
-# --- RSS NEWS (FILTRATA PER INVII AUTOMATICI) ---
+# --- RSS NEWS (CON FILTRO ANTI-DOPPIONI) ---
 def controlla_notizie(chat_dest=None):
+    global ULTIMO_LINK_INVIATO
     try:
         feed = feedparser.parse("https://it.investing.com/rss/news.rss")
         if feed.entries:
             ultima = feed.entries[0]
+            
+            # Se la notizia è esattamente la stessa dell'ultimo invio automatico, blocca l'invio
+            if chat_dest is None and ultima.link == ULTIMO_LINK_INVIATO:
+                return
+
             asset_target, sentiment = analizza_impatto_notizia(ultima.title)
             
+            # Se automatico e neutro, scartiamo per non intasare
             if chat_dest is None and "NEUTRO" in sentiment:
                 return
             
@@ -143,7 +154,13 @@ def controlla_notizie(chat_dest=None):
                 f"⚡ *Impatto Mirato:* {sentiment}\n\n"
                 f"🔗 [👉 CLICCA QUI PER LEGGERE L'ARTICOLO]({ultima.link})"
             )
+            
             invia_messaggio(msg, chat_dest)
+            
+            # Aggiorna la memoria del link inviato (solo per i controlli automatici)
+            if chat_dest is None:
+                ULTIMO_LINK_INVIATO = ultima.link
+                
     except Exception as e:
         print(f"Errore RSS: {e}")
 
@@ -162,28 +179,37 @@ def notizie_sette_giorni(chat_dest=None):
     except Exception as e:
         print(f"Errore Notizie 7GG: {e}")
 
-# --- CALENDARIO ECONOMICO ---
+# --- CALENDARIO ECONOMICO DINAMICO ---
 def invia_calendario(tipo, chat_dest=None):
-    if tipo == "oggi":
-        msg = (
-            "📅 **CALENDARIO ECONOMICO DI OGGI** 🎯\n"
-            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-            "⏰ *14:30* | 💵 **USD** | Discorso FED & Dati Occupazione\n"
-            "   ⚡ *Impatto Diretto:* 🥇 Oro (XAUUSD) & 💵 EUR/USD\n\n"
-            "⏰ *16:00* | 💶 **EUR** | Intervento Ufficiale BCE\n"
-            "   ⚡ *Impatto Diretto:* 💶 EUR/USD & 🇪🇺 EUR/GBP\n"
-            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        )
-    else:
-        msg = (
-            "📆 **CALENDARIO ECONOMICO PROSSIMI 7 GIORNI** 📈\n"
-            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-            "🟢 *Lunedì:* PIL Stati Uniti 🇺🇸 (Impatto forte su 💵 USD / EURUSD)\n"
-            "🟡 *Mercoledì:* Decisione Tassi d'Interesse FED 🏦 (Impatto su 🥇 XAUUSD e 🪙 BTC)\n"
-            "🔴 *Venerdì:* Non-Farm Payrolls (NFP) 📊 Cruciale per 🥇 XAUUSD\n"
-            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        )
-    invia_messaggio(msg, chat_dest)
+    try:
+        feed = feedparser.parse("https://it.investing.com/rss/news.rss")
+        eventi_rilevanti = []
+        
+        if feed.entries:
+            for entry in feed.entries:
+                t = entry.title.lower()
+                if any(k in t for k in ["bce", "fed", "inflazione", "tassi", "pil", "occupazione", "discorso", "banca centrale", "dollaro", "euro", "petrolio", "oro"]):
+                    asset_target, sentiment = analizza_impatto_notizia(entry.title)
+                    eventi_rilevanti.append(f"📌 *{entry.title}*\n   🎯 *Interessa:* {asset_target}\n   ⚡ *Previsione:* {sentiment}\n")
+
+        if tipo == "oggi":
+            msg = "📅 **CALENDARIO & EVENTI CHIAVE - OGGI** 🎯\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            if eventi_rilevanti:
+                msg += "\n".join(eventi_rilevanti[:3])
+            else:
+                msg += "🟢 *Nessun evento macro ad alto impatto nelle ultime ore.* Il mercato prosegue sui livelli tecnici.\n"
+        else:
+            msg = "📆 **CALENDARIO MACRO & EVENTI - PROSSIMI 7 GIORNI** 📈\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            if eventi_rilevanti:
+                msg += "\n".join(eventi_rilevanti[:6])
+            else:
+                msg += "🟢 *Monitoraggio settimanale attivo:* Nessun evento critico straordinario segnalato al momento.\n"
+                
+        msg += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        invia_messaggio(msg, chat_dest)
+    except Exception as e:
+        print(f"Errore Calendario: {e}")
+        invia_messaggio("⚠️ Impossibile caricare il calendario in questo momento.", chat_dest)
 
 # --- ANALISI ASSET UNIVERSALE ---
 def analizza_asset(simbolo, nome_asset, chat_dest=None):
@@ -218,7 +244,7 @@ def analizza_asset(simbolo, nome_asset, chat_dest=None):
         print(f"Errore analisi {nome_asset}: {e}")
         invia_messaggio(f"❌ Errore di connessione dati per {nome_asset}.", chat_dest)
 
-# --- ASCOLTO COMANDI E PULSANTI (CON AUTO-RIPRESA) ---
+# --- ASCOLTO COMANDI E PULSANTI ---
 def ascolta_comandi():
     if not TOKEN:
         return
@@ -242,8 +268,15 @@ def ascolta_comandi():
                         msg = update["message"]
                         testo = msg.get("text", "")
                         chat_id = msg.get("chat", {}).get("id")
-                        if testo and "/menu" in testo.lower():
-                            invia_messaggio_con_menu(chat_id)
+                        
+                        if testo:
+                            cmd = testo.lower()
+                            if "/menu" in cmd:
+                                invia_messaggio_con_menu(chat_id)
+                            elif "/restart" in cmd:
+                                invia_messaggio("🔄 *RIAVVIO RICHIESTO:* Il bot si sta riavviando...", chat_id)
+                                time.sleep(1)
+                                sys.exit(1)
                             
                     elif "callback_query" in update:
                         query = update["callback_query"]
@@ -282,18 +315,18 @@ def ascolta_comandi():
                         elif data_callback == "cal_7gg":
                             invia_calendario("7gg", chat_id)
                         elif data_callback == "guida":
-                            invia_messaggio("📖 *GUIDA BOT:*\nUsa `/menu` per aprire la plancia interattiva. Il bot è protetto contro i blocchi ed è attivo 24/7! 🚀🔥", chat_id)
+                            invia_messaggio("📖 *GUIDA BOT:*\n- Usa `/menu` per la plancia.\n- Usa `/restart` per riavviare il bot all'istante! 🚀🔥", chat_id)
                         else:
                             invia_messaggio(f"✨ Sezione `{data_callback}` aperta con successo!", chat_id)
                             
         except Exception as e:
-            print(f"Errore di rete nell'ascolto (riprovo tra 3 secondi): {e}")
+            print(f"Errore ascolto: {e}")
             time.sleep(3)
 
 # --- WORKER BACKGROUND ---
 def worker():
     time.sleep(5)
-    invia_messaggio("🚀 *SERVER ONLINE:* Bot riavviato e protetto contro i blocchi! 🟢🔥")
+    invia_messaggio("🚀 *SERVER ONLINE:* Filtro anti-doppioni attivo! Non riceverai più la stessa notizia due volte. 🟢🔥")
     
     Thread(target=ascolta_comandi, daemon=True).start()
     
