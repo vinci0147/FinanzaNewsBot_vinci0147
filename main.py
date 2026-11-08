@@ -71,7 +71,7 @@ def invia_messaggio(testo, chat_dest=None):
         print(f"Errore invio Telegram: {e}")
 
 # --- RSS NEWS ---
-def controlla_notizie():
+def controlla_notizie(chat_dest=None):
     try:
         feed = feedparser.parse("https://it.investing.com/rss/news.rss")
         if feed.entries:
@@ -82,66 +82,36 @@ def controlla_notizie():
                 f"{ultima.title}\n\n"
                 f"[Leggi l'articolo]({ultima.link})"
             )
-            invia_messaggio(msg)
+            invia_messaggio(msg, chat_dest)
     except Exception as e:
         print(f"Errore RSS: {e}")
 
-# --- ANALISI CRYPTO (BTC) ---
-def analizza_crypto(chat_dest=None):
+# --- ANALISI ASSET UNIVERSALE (ROBUSTA) ---
+def analizza_asset(simbolo, nome_asset, chat_dest=None):
     try:
-        btc = yfinance.Ticker("BTC-USD")
-        df = btc.history(period="2d")
-        if len(df) >= 2:
+        ticker = yfinance.Ticker(simbolo)
+        df = ticker.history(period="5d")
+        if not df.empty and len(df) >= 2:
             prezzo = df['Close'].iloc[-1]
-            var = ((prezzo - df['Close'].iloc[-2]) / df['Close'].iloc[-2]) * 100
+            prezzo_prec = df['Close'].iloc[-2]
+            var = ((prezzo - prezzo_prec) / prezzo_prec) * 100
             
             trend = "Rialzista / Momento Positivo" if var >= 0 else "Ribassista / Momento Negativo"
-            rialzo_pct = 57 if var >= 0 else 43
-            ribasso_pct = 100 - rialzo_pct
             
             msg = (
-                f"ANALISI INTEGRATA: BTC-USD\n"
+                f"ANALISI MERCATO: {nome_asset}\n"
                 f"----------------------------------------\n"
                 f"Prezzo Attuale: {prezzo:.4f}\n"
                 f"Variazione Tecnica: {var:+.2f}%\n"
-                f"Trend Rilevato: {trend}\n\n"
-                f"Contesto Macro: Nessun titolo di primo piano correlato.\n\n"
-                f"Stime a Breve:\n"
-                f"- Rialzo: {rialzo_pct}%\n"
-                f"- Ribasso: {ribasso_pct}%\n"
+                f"Trend Rilevato: {trend}\n"
                 f"----------------------------------------"
             )
             invia_messaggio(msg, chat_dest)
+        else:
+            invia_messaggio(f"Dati non ancora disponibili per {nome_asset}.", chat_dest)
     except Exception as e:
-        print(f"Errore Crypto: {e}")
-
-# --- ANALISI ORO (XAUUSD) ---
-def analizza_oro(chat_dest=None):
-    try:
-        oro = yfinance.Ticker("GC=F")
-        df = oro.history(period="2d")
-        if len(df) >= 2:
-            prezzo = df['Close'].iloc[-1]
-            var = ((prezzo - df['Close'].iloc[-2]) / df['Close'].iloc[-2]) * 100
-            
-            trend = "Rialzista / Momento Positivo" if var >= 0 else "Ribassista / Momento Negativo"
-            rialzo_pct = 60 if var >= 0 else 40
-            ribasso_pct = 100 - rialzo_pct
-            
-            msg = (
-                f"ANALISI INTEGRATA: ORO (XAUUSD)\n"
-                f"----------------------------------------\n"
-                f"Prezzo Attuale: {prezzo:.2f}\n"
-                f"Variazione Tecnica: {var:+.2f}%\n"
-                f"Trend Rilevato: {trend}\n\n"
-                f"Stime a Breve:\n"
-                f"- Rialzo: {rialzo_pct}%\n"
-                f"- Ribasso: {ribasso_pct}%\n"
-                f"----------------------------------------"
-            )
-            invia_messaggio(msg, chat_dest)
-    except Exception as e:
-        print(f"Errore Oro: {e}")
+        print(f"Errore analisi {nome_asset}: {e}")
+        invia_messaggio(f"Errore di connessione dati per {nome_asset}.", chat_dest)
 
 # --- ASCOLTO COMANDI E PULSANTI ---
 def ascolta_comandi():
@@ -176,16 +146,35 @@ def ascolta_comandi():
                         data_callback = query["data"]
                         
                         callback_url = f"https://api.telegram.org/bot{TOKEN}/answerCallbackQuery"
-                        requests.post(callback_url, json={"callback_query_id": query["id"], "text": "Aggiornamento in corso..."})
+                        requests.post(callback_url, json={"callback_query_id": query["id"], "text": "Caricamento in corso..."})
                         
+                        # Mappatura pulita di tutti i pulsanti
                         if data_callback == "btc":
-                            analizza_crypto(chat_id)
+                            analizza_asset("BTC-USD", "BITCOIN (BTC)", chat_id)
                         elif data_callback == "oro":
-                            analizza_oro(chat_id)
+                            analizza_asset("GC=F", "ORO (XAUUSD)", chat_id)
+                        elif data_callback == "eurusd":
+                            analizza_asset("EURUSD=X", "EUR/USD", chat_id)
+                        elif data_callback == "gbpusd":
+                            analizza_asset("GBPUSD=X", "GBP/USD", chat_id)
+                        elif data_callback == "usdjpy":
+                            analizza_asset("USDJPY=X", "USD/JPY", chat_id)
+                        elif data_callback == "usdchf":
+                            analizza_asset("USDCHF=X", "USD/CHF", chat_id)
+                        elif data_callback == "audusd":
+                            analizza_asset("AUDUSD=X", "AUD/USD", chat_id)
+                        elif data_callback == "usdcad":
+                            analizza_asset("USDCAD=X", "USD/CAD", chat_id)
+                        elif data_callback == "nzdusd":
+                            analizza_asset("NZDUSD=X", "NZD/USD", chat_id)
+                        elif data_callback == "eurgbp":
+                            analizza_asset("EURGBP=X", "EUR/GBP", chat_id)
                         elif data_callback == "news_oggi":
-                            controlla_notizie()
+                            controlla_notizie(chat_id)
+                        elif data_callback == "guida":
+                            invia_messaggio("Usa il comando /menu per aprire la plancia e clicca sui pulsanti per ricevere l'analisi in tempo reale.", chat_id)
                         else:
-                            invia_messaggio(f"Sezione '{data_callback}' selezionata. Dati in arrivo...", chat_id)
+                            invia_messaggio(f"Sezione '{data_callback}' selezionata.", chat_id)
                             
         except Exception as e:
             print(f"Errore ascolto: {e}")
@@ -198,8 +187,8 @@ def worker():
     
     Thread(target=ascolta_comandi, daemon=True).start()
     
-    schedule.every(15).minutes.do(controlla_notizie)
-    schedule.every(1).hours.do(lambda: analizza_crypto())
+    schedule.every(15).minutes.do(lambda: controlla_notizie())
+    schedule.every(1).hours.do(lambda: analizza_asset("BTC-USD", "BITCOIN (BTC)"))
     
     while True:
         schedule.run_pending()
