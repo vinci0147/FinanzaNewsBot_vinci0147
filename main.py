@@ -70,40 +70,65 @@ def invia_messaggio(testo, chat_dest=None):
     except Exception as e:
         print(f"Errore invio Telegram: {e}")
 
-# --- RILEVAMENTO MIRATO DELL'ASSET E DEL SENTIMENT DALLA NEWS ---
+# --- ANALISI MIRATA PER ASSET SPECIFICI (XAUUSD, BTCUSD, FOREX) ---
 def analizza_impatto_notizia(titolo):
     t = titolo.lower()
     
-    asset_target = "Mercati Globali / Indici 🌐"
-    if any(k in t for k in ["oro", "gold", "xau", "metalli"]):
-        asset_target = "Oro (XAUUSD) 🥇"
-    elif any(k in t for k in ["bitcoin", "btc", "crypto", "criptovalute", "blockchain"]):
-        asset_target = "Bitcoin (BTC) 🪙"
-    elif any(k in t for k in ["euro", "bce", "lagarde", "germania", "francia"]):
-        asset_target = "EUR/USD & EUR/GBP 💶🇪🇺"
-    elif any(k in t for k in ["sterlina", "uk", "gbp", "boe"]):
-        asset_target = "GBP/USD 💷"
-    elif any(k in t for k in ["yen", "giappone", "boj", "jpy"]):
-        asset_target = "USD/JPY 💴"
-    elif any(k in t for k in ["dollaro", "fed", "powell", "usa", "stati uniti", "inflazione", "tassi", "occupazione", "pil"]):
-        asset_target = "Dollaro / Forex Generale (USD) 💵"
-    elif any(k in t for k in ["banche", "banca", "stocks", "azioni", "dirigente", "titolo"]):
-        asset_target = "Azionario / Settore Bancario 🏦"
-
-    parole_rosse = ["crisi", "crollo", "inflazione", "guerra", "tensioni", "recessione", "calo", "perdite", "debito", "allarme", "vendite", "scende"]
-    parole_verdi = ["crescita", "rialzo", "record", "boom", "sviluppo", "accordo", "positivo", "utili", "super", "stabilità", "acquista", "sale"]
+    # Parole chiave per il Sentiment
+    parole_rosse = ["crisi", "crollo", "inflazione", "guerra", "tensioni", "recessione", "calo", "perdite", "debito", "allarme", "vendite", "scende", "cede"]
+    parole_verdi = ["crescita", "rialzo", "record", "boom", "sviluppo", "accordo", "positivo", "utili", "super", "stabilità", "acquista", "sale", "stimolo"]
     
     score_rosso = sum(1 for p in parole_rosse if p in t)
     score_verde = sum(1 for p in parole_verdi if p in t)
     
     if score_rosso > score_verde:
-        sentiment = "SFAVOREVOLE / Rischio ribasso 🔴📉"
+        sentiment_base = "SFAVOREVOLE / Rischio ribasso 🔴📉"
     elif score_verde > score_rosso:
-        sentiment = "FAVOREVOLE / Impatto positivo 🟢📈"
+        sentiment_base = "FAVOREVOLE / Impatto positivo 🟢📈"
     else:
-        sentiment = "NEUTRO / In attesa di dati ⚪⚖️"
+        sentiment_base = "NEUTRO / In attesa di dati ⚪⚖️"
+
+    # Legame diretto con i tuoi asset specifici
+    if any(k in t for k in ["oro", "gold", "xau", "metalli"]):
+        if "FAVOREVOLE" in sentiment_base:
+            return "Oro (XAUUSD) 🥇", "FAVOREVOLE al Buy (Rialzo Metalli) 🟢📈"
+        elif "SFAVOREVOLE" in sentiment_base:
+            return "Oro (XAUUSD) 🥇", "SFAVOREVOLE / Pressione Sell 🔴📉"
+        else:
+            return "Oro (XAUUSD) 🥇", "NEUTRO per XAUUSD ⚪⚖️"
+            
+    elif any(k in t for k in ["bitcoin", "btc", "crypto", "criptovalute", "blockchain"]):
+        if "FAVOREVOLE" in sentiment_base:
+            return "Bitcoin (BTC) 🪙", "FAVOREVOLE al Buy (Crypto Pump) 🟢📈"
+        elif "SFAVOREVOLE" in sentiment_base:
+            return "Bitcoin (BTC) 🪙", "SFAVOREVOLE / Rischio Crollo Crypto 🔴📉"
+        else:
+            return "Bitcoin (BTC) 🪙", "NEUTRO per BTC ⚪⚖️"
+            
+    elif any(k in t for k in ["euro", "bce", "lagarde", "germania", "francia"]):
+        if "FAVOREVOLE" in sentiment_base:
+            return "EUR/USD & EUR/GBP 💶🇪🇺", "FAVOREVOLE per l'Euro 🟢📈"
+        else:
+            return "EUR/USD & EUR/GBP 💶🇪🇺", "SFAVOREVOLE per l'Euro 🔴📉"
+            
+    elif any(k in t for k in ["sterlina", "uk", "gbp", "boe"]):
+        if "FAVOREVOLE" in sentiment_base:
+            return "GBP/USD 💷", "FAVOREVOLE per la Sterlina 🟢📈"
+        else:
+            return "GBP/USD 💷", "SFAVOREVOLE per la Sterlina 🔴📉"
+            
+    elif any(k in t for k in ["yen", "giappone", "boj", "jpy"]):
+        return "USD/JPY 💴", sentiment_base
         
-    return asset_target, sentiment
+    elif any(k in t for k in ["dollaro", "fed", "powell", "usa", "stati uniti", "inflazione", "tassi", "occupazione", "pil"]):
+        # Se il dollaro sale/è forte, EUR/USD scende e viceversa
+        if "FAVOREVOLE" in sentiment_base:
+            return "USD (Dollaro / Forex) 💵", "FAVOREVOLE per USD (Sfavorevole EUR/USD) 🟢🇺🇸"
+        else:
+            return "USD (Dollaro / Forex) 💵", "SFAVOREVOLE per USD (Favorevole EUR/USD) 🔴🇺🇸"
+            
+    else:
+        return "Mercati Generali / Forex 🌐", sentiment_base
 
 # --- RSS NEWS (FILTRATA PER INVII AUTOMATICI) ---
 def controlla_notizie(chat_dest=None):
@@ -120,8 +145,8 @@ def controlla_notizie(chat_dest=None):
                 f"🚨 **ULTIMA ORA MERCATO FINANZIARIO** 🚨\n"
                 f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
                 f"📌 *Titolo:* {ultima.title}\n\n"
-                f"🎯 *Asset Interessato:* {asset_target}\n"
-                f"⚡ *Impatto Rilevato:* {sentiment}\n\n"
+                f"🎯 *Asset Specifico:* {asset_target}\n"
+                f"⚡ *Impatto Mirato:* {sentiment}\n\n"
                 f"🔗 [👉 CLICCA QUI PER LEGGERE L'ARTICOLO]({ultima.link})"
             )
             invia_messaggio(msg, chat_dest)
@@ -133,7 +158,7 @@ def notizie_sette_giorni(chat_dest=None):
     try:
         feed = feedparser.parse("https://it.investing.com/rss/news.rss")
         if feed.entries:
-            msg = "📰 **PANNELLO ULTIME 5 NOTIZIE & TARGET** 📊\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            msg = "📰 **PANNELLO ULTIME 5 NOTIZIE & IMPATTO ASSET** 📊\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
             for i, entry in enumerate(feed.entries[:5]):
                 asset_target, sentiment = analizza_impatto_notizia(entry.title)
                 msg += f"🔹 *{i+1}.* {entry.title}\n   🎯 *Asset:* {asset_target}\n   ↳ *Impatto:* {sentiment}\n\n"
@@ -150,7 +175,7 @@ def invia_calendario(tipo, chat_dest=None):
             "📅 **CALENDARIO ECONOMICO DI OGGI** 🎯\n"
             "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
             "⏰ *14:30* | 💵 **USD** | Discorso FED & Dati Occupazione\n"
-            "   ⚡ *Impatto Diretto:* 🥇 Oro (XAUUSD) & 💵 Dollaro\n\n"
+            "   ⚡ *Impatto Diretto:* 🥇 Oro (XAUUSD) & 💵 EUR/USD\n\n"
             "⏰ *16:00* | 💶 **EUR** | Intervento Ufficiale BCE\n"
             "   ⚡ *Impatto Diretto:* 💶 EUR/USD & 🇪🇺 EUR/GBP\n"
             "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -159,8 +184,8 @@ def invia_calendario(tipo, chat_dest=None):
         msg = (
             "📆 **CALENDARIO ECONOMICO PROSSIMI 7 GIORNI** 📈\n"
             "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-            "🟢 *Lunedì:* PIL Stati Uniti 🇺🇸 (Impatto forte su 💵 USD)\n"
-            "🟡 *Mercoledì:* Decisione Tassi d'Interesse FED 🏦 (Impatto su tutti gli asset)\n"
+            "🟢 *Lunedì:* PIL Stati Uniti 🇺🇸 (Impatto forte su 💵 USD / EURUSD)\n"
+            "🟡 *Mercoledì:* Decisione Tassi d'Interesse FED 🏦 (Impatto su 🥇 XAUUSD e 🪙 BTC)\n"
             "🔴 *Venerdì:* Non-Farm Payrolls (NFP) 📊 Cruciale per 🥇 XAUUSD\n"
             "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
         )
@@ -263,7 +288,7 @@ def ascolta_comandi():
                         elif data_callback == "cal_7gg":
                             invia_calendario("7gg", chat_id)
                         elif data_callback == "guida":
-                            invia_messaggio("📖 *GUIDA BOT:*\nOra il bot associa in automatico ogni notizia all'asset specifico coinvolto (Oro, Bitcoin, Forex, ecc.), indicandoti se l'impatto è favorevole o sfavorevole! 🚀🔥", chat_id)
+                            invia_messaggio("📖 *GUIDA BOT:*\nAdesso le notizie collegano direttamente il sentiment (Favorevole o Sfavorevole) al tuo asset specifico (es. Oro, Bitcoin, EUR/USD)! 🚀🔥", chat_id)
                         else:
                             invia_messaggio(f"✨ Sezione `{data_callback}` aperta con successo!", chat_id)
                             
@@ -274,7 +299,7 @@ def ascolta_comandi():
 # --- WORKER BACKGROUND ---
 def worker():
     time.sleep(5)
-    invia_messaggio("🚀 *SERVER ONLINE:* Bot avviato, ora associa le notizie agli asset specifici! 🟢🔥")
+    invia_messaggio("🚀 *SERVER ONLINE:* Bot avviato con analisi mirata per asset! 🟢🔥")
     
     Thread(target=ascolta_comandi, daemon=True).start()
     
