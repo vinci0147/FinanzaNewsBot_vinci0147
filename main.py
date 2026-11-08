@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 import os
 import time
 from threading import Thread
@@ -8,73 +9,64 @@ import schedule
 import yfinance
 
 # --- CONFIGURAZIONE TOKEN E PARAMETRI ---
-TOKEN = os.environ.get('TELEGRAM_TOKEN', 'IL_TUO_TOKEN_QUI')
-CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID', 'IL_TUO_CHAT_ID_QUI')
+TOKEN = os.environ.get('TELEGRAM_TOKEN')
+CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID')
+
+if not TOKEN or not CHAT_ID:
+  print("ATTENZIONE: TELEGRAM_TOKEN o TELEGRAM_CHAT_ID non configurati nelle variabili d'ambiente di Render!")
 
 
 # --- FUNZIONE DI INVIO MESSAGGI A TELEGRAM ---
 def invia_messaggio_telegram(testo):
+  if not TOKEN or not CHAT_ID:
+    print("Impossibile inviare il messaggio: Token o Chat ID mancanti.")
+    return
+  
   url = f'https://api.telegram.org/bot{TOKEN}/sendMessage'
   payload = {'chat_id': CHAT_ID, 'text': testo, 'parse_mode': 'Markdown'}
   try:
     response = requests.post(url, json=payload, timeout=10)
-    return response.json()
+    res_data = response.json()
+    if not res_data.get("ok"):
+      print(f"Errore Telegram: {res_data}")
+    return res_data
   except Exception as e:
-    print(f"Errore nell'invio del messaggio Telegram: {e}")
+    print(f"Errore di rete nell'invio del messaggio Telegram: {e}")
 
 
 # --- 1. ANALISI NOTIZIE RSS ---
 def analizza_sentiment_notizia(titolo):
   titolo_lower = titolo.lower()
-  parole_buy = [
-      'punta',
-      'crescita',
-      'rialzo',
-      'record',
-      'sviluppo',
-      'positivo',
-      'acquisti',
-      'rally',
-      'supera',
-  ]
-  parole_sell = [
-      'perde slancio',
-      'calo',
-      'crisi',
-      'ribasso',
-      'inflazione',
-      'crolla',
-      'tensioni',
-  ]
-
+  parole_buy = ['punta', 'crescita', 'rialzo', 'record', 'sviluppo', 'positivo', 'acquisti', 'rally', 'supera']
+  parole_sell = ['perde slancio', 'calo', 'crisi', 'ribasso', 'inflazione', 'crolla', 'tensioni']
+  
   score_buy = sum(1 for p in parole_buy if p in titolo_lower)
   score_sell = sum(1 for p in parole_sell if p in titolo_lower)
-
+  
   if score_sell > score_buy:
     return 'Ribassista / Momento Negativo'
   else:
     return 'Rialzista / Momento Positivo'
-
 
 def controlla_notizie():
   print('Controllo nuove notizie finanziarie...')
   try:
     url_rss = 'https://it.investing.com/rss/news.rss'
     feed = feedparser.parse(url_rss)
-
+    
     if feed.entries:
       ultima = feed.entries[0]
       titolo = ultima.title
       link = ultima.link
       segnale = analizza_sentiment_notizia(titolo)
-
+      
       messaggio = (
           f'ULTIMA ORA MERCATO\n'
           f'----------------------------------------\n'
           f'{titolo}\n\n'
           f'Trend Rilevato: {segnale}\n'
           f'----------------------------------------\n'
-          f'[Leggi l\'articolo completo]({link})'
+          f"[Leggi l'articolo completo]({link})"
       )
       invia_messaggio_telegram(messaggio)
   except Exception as e:
@@ -87,21 +79,21 @@ def analizza_crypto():
   try:
     btc = yfinance.Ticker('BTC-USD')
     df = btc.history(period='2d')
-
+    
     if len(df) >= 2:
       prezzo_attuale = df['Close'].iloc[-1]
       prezzo_precedente = df['Close'].iloc[-2]
       var_pct = ((prezzo_attuale - prezzo_precedente) / prezzo_precedente) * 100
-
+      
       if var_pct >= 0:
         trend_text = 'Rialzista / Momento Positivo'
         stima_rialzo = 57
       else:
         trend_text = 'Ribassista / Momento Negativo'
         stima_rialzo = 43
-
+          
       stima_ribasso = 100 - stima_rialzo
-
+      
       messaggio = (
           f'ANALISI INTEGRATA: BTC-USD\n'
           f'----------------------------------------\n'
@@ -123,22 +115,18 @@ def analizza_crypto():
 # --- MINISERVER FLASK E BACKGROUND WORKER ---
 app_web = Flask('')
 
-
 @app_web.route('/')
 def home():
   return 'Il bot di trading e sentiment analysis è attivo 24/7!'
 
-
 def background_worker():
-  # Invia un messaggio di notifica appena si avvia per confermare che è online
-  time.sleep(5)
-  invia_messaggio_telegram(
-      'SERVER ONLINE: Il bot di trading è stato riavviato e operativo!'
-  )
-
+  time.sleep(3)
+  print("Invio messaggio di test all'avvio...")
+  invia_messaggio_telegram("SERVER ONLINE: Il bot è correttamente collegato e operativo!")
+  
   schedule.every(15).minutes.do(controlla_notizie)
   schedule.every(1).hours.do(analizza_crypto)
-
+  
   print('Schedulatore attività avviato in background.')
   while True:
     try:
@@ -150,11 +138,9 @@ def background_worker():
 
 
 if __name__ == '__main__':
-  # Avvia lo schedulatore in background
   worker_thread = Thread(target=background_worker, daemon=True)
   worker_thread.start()
-
-  # Avvia Flask sul thread principale per soddisfare Render
+  
   port = int(os.environ.get('PORT', 8080))
   print(f'Server Flask in ascolto sulla porta {port}...')
   app_web.run(host='0.0.0.0', port=port)
