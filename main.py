@@ -86,8 +86,8 @@ def controlla_notizie():
     except Exception as e:
         print(f"Errore RSS: {e}")
 
-# --- ANALISI CRYPTO ---
-def analizza_crypto():
+# --- ANALISI CRYPTO (BTC) ---
+def analizza_crypto(chat_dest=None):
     try:
         btc = yfinance.Ticker("BTC-USD")
         df = btc.history(period="2d")
@@ -105,16 +105,43 @@ def analizza_crypto():
                 f"Prezzo Attuale: {prezzo:.4f}\n"
                 f"Variazione Tecnica: {var:+.2f}%\n"
                 f"Trend Rilevato: {trend}\n\n"
-                f"Contesto Macro: Nessun titolo di primo piano correlato nelle ultime ore.\n\n"
+                f"Contesto Macro: Nessun titolo di primo piano correlato.\n\n"
                 f"Stime a Breve:\n"
                 f"- Rialzo: {rialzo_pct}%\n"
                 f"- Ribasso: {ribasso_pct}%\n"
-                f"----------------------------------------\n"
-                f"Modello combinato: Momentum grafico + Feed Notizie live."
+                f"----------------------------------------"
             )
-            invia_messaggio(msg)
+            invia_messaggio(msg, chat_dest)
     except Exception as e:
         print(f"Errore Crypto: {e}")
+
+# --- ANALISI ORO (XAUUSD) ---
+def analizza_oro(chat_dest=None):
+    try:
+        oro = yfinance.Ticker("GC=F")
+        df = oro.history(period="2d")
+        if len(df) >= 2:
+            prezzo = df['Close'].iloc[-1]
+            var = ((prezzo - df['Close'].iloc[-2]) / df['Close'].iloc[-2]) * 100
+            
+            trend = "Rialzista / Momento Positivo" if var >= 0 else "Ribassista / Momento Negativo"
+            rialzo_pct = 60 if var >= 0 else 40
+            ribasso_pct = 100 - rialzo_pct
+            
+            msg = (
+                f"ANALISI INTEGRATA: ORO (XAUUSD)\n"
+                f"----------------------------------------\n"
+                f"Prezzo Attuale: {prezzo:.2f}\n"
+                f"Variazione Tecnica: {var:+.2f}%\n"
+                f"Trend Rilevato: {trend}\n\n"
+                f"Stime a Breve:\n"
+                f"- Rialzo: {rialzo_pct}%\n"
+                f"- Ribasso: {ribasso_pct}%\n"
+                f"----------------------------------------"
+            )
+            invia_messaggio(msg, chat_dest)
+    except Exception as e:
+        print(f"Errore Oro: {e}")
 
 # --- ASCOLTO COMANDI E PULSANTI ---
 def ascolta_comandi():
@@ -149,14 +176,16 @@ def ascolta_comandi():
                         data_callback = query["data"]
                         
                         callback_url = f"https://api.telegram.org/bot{TOKEN}/answerCallbackQuery"
-                        requests.post(callback_url, json={"callback_query_id": query["id"], "text": "Caricamento dati..."})
+                        requests.post(callback_url, json={"callback_query_id": query["id"], "text": "Aggiornamento in corso..."})
                         
                         if data_callback == "btc":
-                            analizza_crypto()
+                            analizza_crypto(chat_id)
+                        elif data_callback == "oro":
+                            analizza_oro(chat_id)
                         elif data_callback == "news_oggi":
                             controlla_notizie()
                         else:
-                            invia_messaggio(f"Sezione '{data_callback}' selezionata. Aggiornamento in corso...", chat_id)
+                            invia_messaggio(f"Sezione '{data_callback}' selezionata. Dati in arrivo...", chat_id)
                             
         except Exception as e:
             print(f"Errore ascolto: {e}")
@@ -170,7 +199,7 @@ def worker():
     Thread(target=ascolta_comandi, daemon=True).start()
     
     schedule.every(15).minutes.do(controlla_notizie)
-    schedule.every(1).hours.do(analizza_crypto)
+    schedule.every(1).hours.do(lambda: analizza_crypto())
     
     while True:
         schedule.run_pending()
