@@ -51,9 +51,9 @@ def analizza_sentiment_notizia(titolo):
   score_sell = sum(1 for p in parole_sell if p in titolo_lower)
 
   if score_sell > score_buy:
-    return 'SELL / Ribassista'
+    return '🔴 *SELL / Ribassista* 📉'
   else:
-    return 'BUY / Rialzista'
+    return '🟢 *BUY / Rialzista* 📈'
 
 
 def controlla_notizie():
@@ -68,10 +68,10 @@ def controlla_notizie():
     segnale = analizza_sentiment_notizia(titolo)
 
     messaggio = (
-        f'ULTIMA ORA MERCATO\n\n'
+        f'📰 *ULTIMA ORA MERCATO*\n\n'
         f'{titolo}\n\n'
         f'Analisi: {segnale}\n\n'
-        f'Leggi di più: {link}'
+        f'🔗 [Leggi di più]({link})'
     )
     invia_messaggio_telegram(messaggio)
 
@@ -89,20 +89,20 @@ def analizza_crypto():
       var_pct = ((prezzo_attuale - prezzo_precedente) / prezzo_precedente) * 100
 
       if var_pct >= 0:
-        trend_icon = '[BUY] RIALZISTA'
+        trend_icon = '🟢 *BUY / Rialzista* 📈'
         stima_rialzo = 65
       else:
-        trend_icon = '[SELL] RIBASSISTA'
+        trend_icon = '🔴 *SELL / Ribassista* 📉'
         stima_rialzo = 35
 
       stima_ribasso = 100 - stima_rialzo
 
       messaggio = (
-          f'ANALISI SMART AI: BTCUSD (BTC-USD)\n'
-          f'Prezzo: {prezzo_attuale:.4f} | Variazione: {var_pct:+.2f}%\n'
+          f'🤖 *ANALISI SMART AI: BTCUSD* (BTC-USD)\n'
+          f'Prezzo: `{prezzo_attuale:.4f}` | Variazione: `{var_pct:+.2f}%`\n'
           f'Trend: {trend_icon}\n\n'
           f'Nessuna notizia macro correlata recente.\n\n'
-          f'Stime: Rialzo {stima_rialzo}% | Ribasso {stima_ribasso}%'
+          f'📊 Stime: Rialzo {stima_rialzo}% | Ribasso {stima_ribasso}%'
       )
       invia_messaggio_telegram(messaggio)
   except Exception as e:
@@ -115,7 +115,7 @@ app_web = Flask('')
 
 @app_web.route('/')
 def home():
-  return 'Il bot di trading è attivo 24/7!'
+  return 'Il bot di trading e sentiment analysis è attivo 24/7!'
 
 
 def run():
@@ -136,7 +136,7 @@ if __name__ == '__main__':
   schedule.every(15).minutes.do(controlla_notizie)
   schedule.every(1).hours.do(analizza_crypto)
 
-  print('Bot avviato con successo!')
+  print('Bot avviato con successo e schedulatore attivo!')
 
   while True:
     try:
