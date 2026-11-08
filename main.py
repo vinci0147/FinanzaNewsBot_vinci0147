@@ -23,10 +23,9 @@ def invia_messaggio_telegram(testo):
     print(f"Errore nell'invio del messaggio Telegram: {e}")
 
 
-# --- 1. ANALISI NOTIZIE RSS (SEMPRE CON EMOJI) ---
+# --- 1. ANALISI NOTIZIE RSS ---
 def analizza_sentiment_notizia(titolo):
   titolo_lower = titolo.lower()
-
   parole_buy = [
       'punta',
       'crescita',
@@ -37,7 +36,6 @@ def analizza_sentiment_notizia(titolo):
       'acquisti',
       'rally',
       'supera',
-      'in crescita',
   ]
   parole_sell = [
       'perde slancio',
@@ -47,18 +45,15 @@ def analizza_sentiment_notizia(titolo):
       'inflazione',
       'crolla',
       'tensioni',
-      'vendite',
-      'frena',
-      'in calo',
   ]
 
   score_buy = sum(1 for p in parole_buy if p in titolo_lower)
   score_sell = sum(1 for p in parole_sell if p in titolo_lower)
 
   if score_sell > score_buy:
-    return '🔴 **SELL / Ribassista 📉**'
+    return 'SELL / Ribassista'
   else:
-    return '🟢 **BUY / Rialzista 📈**'
+    return 'BUY / Rialzista'
 
 
 def controlla_notizie():
@@ -70,19 +65,18 @@ def controlla_notizie():
     ultima = feed.entries[0]
     titolo = ultima.title
     link = ultima.link
-
     segnale = analizza_sentiment_notizia(titolo)
 
     messaggio = (
-        f'📰 **ULTIMA ORA MERCATO**\n\n'
+        f'ULTIMA ORA MERCATO\n\n'
         f'{titolo}\n\n'
         f'Analisi: {segnale}\n\n'
-        f'🔗 [Leggi di più]({link})'
+        f'Leggi di più: {link}'
     )
     invia_messaggio_telegram(messaggio)
 
 
-# --- 2. ANALISI TECNICA SMART AI (CON EMOJI OBBLIGATORIE) ---
+# --- 2. ANALISI TECNICA SMART AI ---
 def analizza_crypto():
   print('Analisi dati di mercato BTC in corso...')
   try:
@@ -94,22 +88,21 @@ def analizza_crypto():
       prezzo_precedente = df['Close'].iloc[-2]
       var_pct = ((prezzo_attuale - prezzo_precedente) / prezzo_precedente) * 100
 
-      # Assegnazione forzata dell'emoji e del trend
       if var_pct >= 0:
-       trend_icon = "🟢 **BUY / Rialzista**"
+        trend_icon = '[BUY] RIALZISTA'
         stima_rialzo = 65
       else:
-        trend_icon = '🔴 **SELL / Ribassista **'
+        trend_icon = '[SELL] RIBASSISTA'
         stima_rialzo = 35
 
       stima_ribasso = 100 - stima_rialzo
 
       messaggio = (
-          f'🤖 **ANALISI SMART AI: BTCUSD (BTC-USD)**\n'
-          f'Prezzo: `{prezzo_attuale:.4f}` | Variazione: `{var_pct:+.2f}%`\n'
+          f'ANALISI SMART AI: BTCUSD (BTC-USD)\n'
+          f'Prezzo: {prezzo_attuale:.4f} | Variazione: {var_pct:+.2f}%\n'
           f'Trend: {trend_icon}\n\n'
           f'Nessuna notizia macro correlata recente.\n\n'
-          f'📊 Stime: Rialzo {stima_rialzo}% | Ribasso {stima_ribasso}%'
+          f'Stime: Rialzo {stima_rialzo}% | Ribasso {stima_ribasso}%'
       )
       invia_messaggio_telegram(messaggio)
   except Exception as e:
@@ -122,7 +115,7 @@ app_web = Flask('')
 
 @app_web.route('/')
 def home():
-  return 'Il bot di trading e sentiment analysis è attivo 24/7!'
+  return 'Il bot di trading è attivo 24/7!'
 
 
 def run():
@@ -135,7 +128,7 @@ def keep_alive():
   t.start()
 
 
-# --- AVVIO PRINCIPALE E SCHEDULATORE ---
+# --- AVVIO PRINCIPALE ---
 if __name__ == '__main__':
   keep_alive()
   print('Server Flask in ascolto.')
@@ -143,7 +136,7 @@ if __name__ == '__main__':
   schedule.every(15).minutes.do(controlla_notizie)
   schedule.every(1).hours.do(analizza_crypto)
 
-  print('Bot avviato con successo e schedulatore attivo!')
+  print('Bot avviato con successo!')
 
   while True:
     try:
