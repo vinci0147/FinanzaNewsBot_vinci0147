@@ -133,4 +133,50 @@ def ascolta_comandi():
             res = requests.get(url, params={'offset': offset, 'timeout': 15}, timeout=20)
             if res.status_code == 200:
                 data = res.json()
-                for update in data
+                for update in data.get("result", []):
+                    offset = update["update_id"] + 1
+                    
+                    if "message" in update and "text" in update["message"]:
+                        msg = update["message"]
+                        testo = msg.get("text", "")
+                        chat_id = msg.get("chat", {}).get("id")
+                        if testo and "/menu" in testo.lower():
+                            invia_messaggio_con_menu(chat_id)
+                            
+                    elif "callback_query" in update:
+                        query = update["callback_query"]
+                        chat_id = query["message"]["chat"]["id"]
+                        data_callback = query["data"]
+                        
+                        callback_url = f"https://api.telegram.org/bot{TOKEN}/answerCallbackQuery"
+                        requests.post(callback_url, json={"callback_query_id": query["id"], "text": "Caricamento dati..."})
+                        
+                        if data_callback == "btc":
+                            analizza_crypto()
+                        elif data_callback == "news_oggi":
+                            controlla_notizie()
+                        else:
+                            invia_messaggio(f"Sezione '{data_callback}' selezionata. Aggiornamento in corso...", chat_id)
+                            
+        except Exception as e:
+            print(f"Errore ascolto: {e}")
+            time.sleep(5)
+
+# --- WORKER BACKGROUND ---
+def worker():
+    time.sleep(5)
+    invia_messaggio("SERVER ONLINE: Bot avviato con successo!")
+    
+    Thread(target=ascolta_comandi, daemon=True).start()
+    
+    schedule.every(15).minutes.do(controlla_notizie)
+    schedule.every(1).hours.do(analizza_crypto)
+    
+    while True:
+        schedule.run_pending()
+        time.sleep(1)
+
+if __name__ == '__main__':
+    Thread(target=worker, daemon=True).start()
+    port = int(os.environ.get('PORT', 8080))
+    app_web.run(host='0.0.0.0', port=port)
