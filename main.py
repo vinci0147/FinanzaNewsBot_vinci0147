@@ -12,6 +12,13 @@ import yfinance
 TOKEN = os.environ.get('TELEGRAM_TOKEN')
 CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID')
 
+# --- SERVER FLASK (DEVE PARTIRE SUBITO PER RENDER) ---
+app_web = Flask('')
+
+@app_web.route('/')
+def home():
+    return "Bot attivo e operativo!"
+
 # --- INVIO MESSAGGI ---
 def invia_messaggio(testo, chat_dest=None):
     destinatario = chat_dest if chat_dest else CHAT_ID
@@ -106,17 +113,12 @@ def ascolta_comandi():
             print(f"Errore ascolto: {e}")
             time.sleep(5)
 
-# --- SERVER FLASK PER RENDER ---
-app_web = Flask('')
-
-@app_web.route('/')
-def home():
-    return "Bot attivo!"
-
+# --- WORKER DI BACKGROUND ---
 def worker():
-    time.sleep(3)
+    time.sleep(5)
     invia_messaggio("SERVER ONLINE: Bot avviato con successo!")
     
+    # Avvia in background l'ascolto dei comandi e lo scheduler
     Thread(target=ascolta_comandi, daemon=True).start()
     
     schedule.every(15).minutes.do(controlla_notizie)
@@ -127,5 +129,9 @@ def worker():
         time.sleep(1)
 
 if __name__ == '__main__':
+    # Avvia il worker in background
     Thread(target=worker, daemon=True).start()
-    port = int(os.environ.get
+    
+    # Avvia Flask sulla porta richiesta da Render (default 8080)
+    port = int(os.environ.get('PORT', 8080))
+    app_web.run(host='0.0.0.0', port=port)
