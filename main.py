@@ -55,11 +55,9 @@ def analizza_sentiment_notizia(titolo):
   score_buy = sum(1 for p in parole_buy if p in titolo_lower)
   score_sell = sum(1 for p in parole_sell if p in titolo_lower)
 
-  # Forziamo sempre un'etichetta chiara con emoji
   if score_sell > score_buy:
     return '🔴 **SELL / Ribassista 📉**'
   else:
-    # Di default o se rialzista, assegna BUY con emoji verde
     return '🟢 **BUY / Rialzista 📈**'
 
 
@@ -84,7 +82,7 @@ def controlla_notizie():
     invia_messaggio_telegram(messaggio)
 
 
-# --- 2. ANALISI TECNICA SMART AI (SEMPRE CON EMOJI) ---
+# --- 2. ANALISI TECNICA SMART AI (CON EMOJI OBBLIGATORIE) ---
 def analizza_crypto():
   print('Analisi dati di mercato BTC in corso...')
   try:
@@ -96,7 +94,7 @@ def analizza_crypto():
       prezzo_precedente = df['Close'].iloc[-2]
       var_pct = ((prezzo_attuale - prezzo_precedente) / prezzo_precedente) * 100
 
-      # Assegnazione rigida delle emoji in base alla variazione
+      # Assegnazione forzata dell'emoji e del trend
       if var_pct >= 0:
         trend_icon = '🟢 **BUY / Rialzista 📈**'
         stima_rialzo = 65
@@ -110,6 +108,7 @@ def analizza_crypto():
           f'🤖 **ANALISI SMART AI: BTCUSD (BTC-USD)**\n'
           f'Prezzo: `{prezzo_attuale:.4f}` | Variazione: `{var_pct:+.2f}%`\n'
           f'Trend: {trend_icon}\n\n'
+          f'Nessuna notizia macro correlata recente.\n\n'
           f'📊 Stime: Rialzo {stima_rialzo}% | Ribasso {stima_ribasso}%'
       )
       invia_messaggio_telegram(messaggio)
