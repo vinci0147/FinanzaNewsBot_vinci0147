@@ -17,21 +17,33 @@ if not TOKEN or not CHAT_ID:
 
 
 # --- FUNZIONE DI INVIO MESSAGGI A TELEGRAM ---
-def invia_messaggio_telegram(testo):
-  if not TOKEN or not CHAT_ID:
+def invia_messaggio_telegram(testo, chat_id_dest=None):
+  id_destinazione = chat_id_dest if chat_id_dest else CHAT_ID
+  if not TOKEN or not id_destinazione:
     print("Impossibile inviare il messaggio: Token o Chat ID mancanti.")
     return
   
   url = f'https://api.telegram.org/bot{TOKEN}/sendMessage'
-  payload = {'chat_id': CHAT_ID, 'text': testo, 'parse_mode': 'Markdown'}
+  payload = {'chat_id': id_destinazione, 'text': testo, 'parse_mode': 'Markdown'}
   try:
     response = requests.post(url, json=payload, timeout=10)
     res_data = response.json()
-    if not res_data.get("ok"):
-      print(f"Errore Telegram: {res_data}")
     return res_data
   except Exception as e:
     print(f"Errore di rete nell'invio del messaggio Telegram: {e}")
+
+
+# --- PANNELLO COMANDI TESTUALE (/menu) ---
+def invia_pannello_comandi(chat_id_dest):
+  testo_pannello = (
+      "PANNELLO FOREX & SMART AI NEWS\n"
+      "----------------------------------------\n"
+      "Seleziona un'opzione o scrivi i comandi di controllo:\n\n"
+      "- Bot attivo e operativo al 24/7\n"
+      "- Monitoraggio RSS e Trend attivi\n"
+      "----------------------------------------"
+  )
+  invia_messaggio_telegram(testo_pannello, chat_id_dest=chat_id_dest)
 
 
 # --- 1. ANALISI NOTIZIE RSS ---
@@ -112,6 +124,34 @@ def analizza_crypto():
     print(f"Errore durante l'analisi crypto: {e}")
 
 
+# --- ASCOLTO COMANDI TELEGRAM (/menu) ---
+def ascolta_comandi():
+  url_base = f"https://api.telegram.org/bot{TOKEN}"
+  offset = 0
+  print("In ascolto dei comandi Telegram (/menu)...")
+  
+  try:
+    requests.get(f"{url_base}/getUpdates", params={'offset': -1, 'timeout': 1})
+  except:
+    pass
+
+  while True:
+    try:
+      response = requests.get(f"{url_base}/getUpdates", params={'offset': offset, 'timeout': 20}, timeout=25)
+      data = response.json()
+      if "result" in data:
+        for update in data["result"]:
+          offset = update["update_id"] + 1
+          if "message" in update and "text" in update["message"]:
+            testo_msg = update["message"]["text"]
+            chat_id_mittente = update["message"]["chat"]["id"]
+            if "/menu" in testo_msg:
+              invia_pannello_comandi(chat_id_dest=chat_id_mittente)
+    except Exception as e:
+      print(f"Errore nel loop comandi: {e}")
+      time.sleep(5)
+
+
 # --- MINISERVER FLASK E BACKGROUND WORKER ---
 app_web = Flask('')
 
@@ -124,6 +164,10 @@ def background_worker():
   print("Invio messaggio di test all'avvio...")
   invia_messaggio_telegram("SERVER ONLINE: Il bot è correttamente collegato e operativo!")
   
+  # Avvia il thread per ascoltare il comando /menu in tempo reale
+  t_comandi = Thread(target=ascolta_comandi, daemon=True)
+  t_comandi.start()
+
   schedule.every(15).minutes.do(controlla_notizie)
   schedule.every(1).hours.do(analizza_crypto)
   
