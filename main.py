@@ -1,3 +1,4 @@
+i# -*- coding: utf-8 -*-
 import os
 import time
 from threading import Thread
@@ -91,7 +92,7 @@ def controlla_notizie():
     print(f"Errore nel controllo notizie: {e}")
 
 
-# --- 2. ANALISI TECNICA SMART AI (CON GRAFICA ED EMOJI) ---
+# --- 2. ANALISI TECNICA SMART AI ---
 def analizza_crypto():
   print("Analisi dati di mercato BTC in corso...")
   try:
@@ -140,7 +141,6 @@ def ascolta_comandi():
   offset = 0
   print("In ascolto dei comandi Telegram (/menu)...")
   
-  # Pulisce i messaggi vecchi all'avvio
   try:
     requests.get(f"{url_base}/getUpdates", params={'offset': -1, 'timeout': 1})
   except:
@@ -162,7 +162,7 @@ def ascolta_comandi():
       time.sleep(5)
 
 
-# --- MINISERVER FLASK (PER MANTENERE RENDER ATTIVO) ---
+# --- MINISERVER FLASK ---
 app_web = Flask('')
 
 @app_web.route('/')
@@ -174,7 +174,6 @@ def background_worker():
   schedule.every(15).minutes.do(controlla_notizie)
   schedule.every(1).hours.do(analizza_crypto)
   
-  # Avvia il thread che ascolta il comando /menu
   t_comandi = Thread(target=ascolta_comandi, daemon=True)
   t_comandi.start()
   
@@ -189,11 +188,9 @@ def background_worker():
 
 
 if __name__ == '__main__':
-  # Avvia il worker in background
   worker_thread = Thread(target=background_worker, daemon=True)
   worker_thread.start()
   
-  # Avvia Flask sul thread principale per Render
   port = int(os.environ.get('PORT', 8080))
   print(f"Server Flask in ascolto sulla porta {port}...")
   app_web.run(host='0.0.0.0', port=port)
