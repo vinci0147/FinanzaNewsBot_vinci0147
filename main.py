@@ -3,16 +3,13 @@ import time
 from threading import Thread
 import feedparser
 import requests
-from flask import Flask, request
+from flask import Flask
 import schedule
 import yfinance
 
 # --- CONFIGURAZIONE TOKEN E PARAMETRI ---
 TOKEN = os.environ.get('TELEGRAM_TOKEN', 'IL_TUO_TOKEN_QUI')
 CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID', 'IL_TUO_CHAT_ID_QUI')
-
-# URL del tuo servizio su Render (esatto come configurato)
-RENDER_URL = "https://finanzanewsbot-vinci0147.onrender.com"
 
 # --- DEFINIZIONE EMOJI SICURE ---
 EMOJI_ROBOT = "🤖"
@@ -33,11 +30,10 @@ EMOJI_INFO = "ℹ️"
 
 
 # --- FUNZIONE DI INVIO MESSAGGI A TELEGRAM ---
-def invia_messaggio_telegram(testo, reply_markup=None, target_chat=None):
-  destinatario = target_chat if target_chat else CHAT_ID
+def invia_messaggio_telegram(testo, reply_markup=None):
   url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
   payload = {
-      'chat_id': destinatario,
+      'chat_id': CHAT_ID,
       'text': testo,
       'parse_mode': 'Markdown'
   }
@@ -51,7 +47,7 @@ def invia_messaggio_telegram(testo, reply_markup=None, target_chat=None):
 
 
 # --- FUNZIONE PER MANDARE IL PANNELLO CON I PULSANTI ---
-def invia_pannello_comandi(target_chat=None):
+def invia_pannello_comandi():
   testo_pannello = (
       f"{EMOJI_ROBOT} *PANNELLO FOREX & SMART AI NEWS*\n"
       f"──────────────────────────\n"
@@ -70,7 +66,7 @@ def invia_pannello_comandi(target_chat=None):
           [{'text': f'{EMOJI_INFO} Guida Comandi', 'callback_data': 'guida'}]
       ]
   }
-  invia_messaggio_telegram(testo_pannello, reply_markup=tastiera, target_chat=target_chat)
+  invia_messaggio_telegram(testo_pannello, reply_markup=tastiera)
 
 
 # --- 1. ANALISI NOTIZIE RSS ---
@@ -155,43 +151,19 @@ def analizza_crypto():
     print(f"Errore durante l'analisi crypto: {e}")
 
 
-# --- FLASK WEB SERVER & WEBHOOK ENDPOINT ---
+# --- MINISERVER FLASK (SUL THREAD PRINCIPALE) ---
 app_web = Flask('')
 
 @app_web.route('/')
 def home():
-  return "Il bot di trading con Webhook è attivo 24/7!"
-
-@app_web.route('/webhook', methods=['POST'])
-def webhook():
-  try:
-    data = request.get_json()
-    if data and 'message' in data:
-      msg = data['message']
-      chat_id = msg.get('chat', {}).get('id')
-      text = msg.get('text', '')
-      if '/menu' in text:
-        invia_pannello_comandi(target_chat=chat_id)
-  except Exception as e:
-    print(f"Errore nel webhook: {e}")
-  return 'OK', 200
-
-
-def imposta_webhook():
-  time.sleep(3) # Attende che Flask sia avviato
-  wh_url = f"{RENDER_URL}/webhook"
-  url_api = f"https://api.telegram.org/bot{TOKEN}/setWebhook?url={wh_url}"
-  try:
-    res = requests.get(url_api)
-    print("Impostazione webhook Telegram:", res.json())
-  except Exception as e:
-    print("Errore configurazione webhook:", e)
+  return "Il bot di trading è attivo 24/7!"
 
 
 def background_worker():
   schedule.every(15).minutes.do(controlla_notizie)
   schedule.every(1).hours.do(analizza_crypto)
   
+  print("Schedulatore attività avviato.")
   while True:
     try:
       schedule.run_pending()
@@ -202,9 +174,11 @@ def background_worker():
 
 
 if __name__ == '__main__':
-  # Avvia lo scheduler in background
+  # Avvia lo schedulatore in background
   worker_thread = Thread(target=background_worker, daemon=True)
   worker_thread.start()
   
-  # Registra automaticamente il webhook su Telegram
-  webhook_thread = Thread(target=imposta_webhook
+  # Avvia Flask sul thread principale per soddisfare Render
+  port = int(os.environ.get('PORT', 8080))
+  print(f"Server Flask in ascolto sulla porta {port}...")
+  app_web.run(host='0.0.0.0', port=port)
