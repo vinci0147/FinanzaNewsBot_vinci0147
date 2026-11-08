@@ -1,4 +1,4 @@
-i# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 import os
 import time
 from threading import Thread
@@ -148,49 +148,4 @@ def ascolta_comandi():
 
   while True:
     try:
-      response = requests.get(f"{url_base}/getUpdates", params={'offset': offset, 'timeout': 20}, timeout=25)
-      data = response.json()
-      if "result" in data:
-        for update in data["result"]:
-          offset = update["update_id"] + 1
-          if "message" in update and "text" in update["message"]:
-            testo_msg = update["message"]["text"]
-            if "/menu" in testo_msg:
-              invia_pannello_comandi()
-    except Exception as e:
-      print(f"Errore nel loop comandi: {e}")
-      time.sleep(5)
-
-
-# --- MINISERVER FLASK ---
-app_web = Flask('')
-
-@app_web.route('/')
-def home():
-  return "Il bot di trading con emoji è attivo 24/7!"
-
-
-def background_worker():
-  schedule.every(15).minutes.do(controlla_notizie)
-  schedule.every(1).hours.do(analizza_crypto)
-  
-  t_comandi = Thread(target=ascolta_comandi, daemon=True)
-  t_comandi.start()
-  
-  print("Schedulatore e ascolto comandi avviati.")
-  while True:
-    try:
-      schedule.run_pending()
-      time.sleep(1)
-    except Exception as e:
-      print(f"Errore nello scheduler: {e}")
-      time.sleep(10)
-
-
-if __name__ == '__main__':
-  worker_thread = Thread(target=background_worker, daemon=True)
-  worker_thread.start()
-  
-  port = int(os.environ.get('PORT', 8080))
-  print(f"Server Flask in ascolto sulla porta {port}...")
-  app_web.run(host='0.0.0.0', port=port)
+      response = requests
