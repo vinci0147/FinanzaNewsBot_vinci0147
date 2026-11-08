@@ -70,11 +70,10 @@ def invia_messaggio(testo, chat_dest=None):
     except Exception as e:
         print(f"Errore invio Telegram: {e}")
 
-# --- ANALISI MIRATA PER ASSET SPECIFICI (XAUUSD, BTCUSD, FOREX) ---
+# --- ANALISI MIRATA PER ASSET SPECIFICI ---
 def analizza_impatto_notizia(titolo):
     t = titolo.lower()
     
-    # Parole chiave per il Sentiment
     parole_rosse = ["crisi", "crollo", "inflazione", "guerra", "tensioni", "recessione", "calo", "perdite", "debito", "allarme", "vendite", "scende", "cede"]
     parole_verdi = ["crescita", "rialzo", "record", "boom", "sviluppo", "accordo", "positivo", "utili", "super", "stabilità", "acquista", "sale", "stimolo"]
     
@@ -88,7 +87,6 @@ def analizza_impatto_notizia(titolo):
     else:
         sentiment_base = "NEUTRO / In attesa di dati ⚪⚖️"
 
-    # Legame diretto con i tuoi asset specifici
     if any(k in t for k in ["oro", "gold", "xau", "metalli"]):
         if "FAVOREVOLE" in sentiment_base:
             return "Oro (XAUUSD) 🥇", "FAVOREVOLE al Buy (Rialzo Metalli) 🟢📈"
@@ -117,11 +115,7 @@ def analizza_impatto_notizia(titolo):
         else:
             return "GBP/USD 💷", "SFAVOREVOLE per la Sterlina 🔴📉"
             
-    elif any(k in t for k in ["yen", "giappone", "boj", "jpy"]):
-        return "USD/JPY 💴", sentiment_base
-        
     elif any(k in t for k in ["dollaro", "fed", "powell", "usa", "stati uniti", "inflazione", "tassi", "occupazione", "pil"]):
-        # Se il dollaro sale/è forte, EUR/USD scende e viceversa
         if "FAVOREVOLE" in sentiment_base:
             return "USD (Dollaro / Forex) 💵", "FAVOREVOLE per USD (Sfavorevole EUR/USD) 🟢🇺🇸"
         else:
@@ -224,7 +218,7 @@ def analizza_asset(simbolo, nome_asset, chat_dest=None):
         print(f"Errore analisi {nome_asset}: {e}")
         invia_messaggio(f"❌ Errore di connessione dati per {nome_asset}.", chat_dest)
 
-# --- ASCOLTO COMANDI E PULSANTI ---
+# --- ASCOLTO COMANDI E PULSANTI (CON AUTO-RIPRESA) ---
 def ascolta_comandi():
     if not TOKEN:
         return
@@ -238,7 +232,7 @@ def ascolta_comandi():
 
     while True:
         try:
-            res = requests.get(url, params={'offset': offset, 'timeout': 15}, timeout=20)
+            res = requests.get(url, params={'offset': offset, 'timeout': 25}, timeout=30)
             if res.status_code == 200:
                 data = res.json()
                 for update in data.get("result", []):
@@ -288,18 +282,18 @@ def ascolta_comandi():
                         elif data_callback == "cal_7gg":
                             invia_calendario("7gg", chat_id)
                         elif data_callback == "guida":
-                            invia_messaggio("📖 *GUIDA BOT:*\nAdesso le notizie collegano direttamente il sentiment (Favorevole o Sfavorevole) al tuo asset specifico (es. Oro, Bitcoin, EUR/USD)! 🚀🔥", chat_id)
+                            invia_messaggio("📖 *GUIDA BOT:*\nUsa `/menu` per aprire la plancia interattiva. Il bot è protetto contro i blocchi ed è attivo 24/7! 🚀🔥", chat_id)
                         else:
                             invia_messaggio(f"✨ Sezione `{data_callback}` aperta con successo!", chat_id)
                             
         except Exception as e:
-            print(f"Errore ascolto: {e}")
-            time.sleep(5)
+            print(f"Errore di rete nell'ascolto (riprovo tra 3 secondi): {e}")
+            time.sleep(3)
 
 # --- WORKER BACKGROUND ---
 def worker():
     time.sleep(5)
-    invia_messaggio("🚀 *SERVER ONLINE:* Bot avviato con analisi mirata per asset! 🟢🔥")
+    invia_messaggio("🚀 *SERVER ONLINE:* Bot riavviato e protetto contro i blocchi! 🟢🔥")
     
     Thread(target=ascolta_comandi, daemon=True).start()
     
