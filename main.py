@@ -8,17 +8,25 @@ import schedule
 import yfinance
 
 # --- CONFIGURAZIONE TOKEN E PARAMETRI ---
-# Legge il token dalle variabili d'ambiente di Render (o inseriscilo qui direttamente)
 TOKEN = os.environ.get('TELEGRAM_TOKEN', 'IL_TUO_TOKEN_QUI')
-CHAT_ID = 'IL_TUO_CHAT_ID_QUI'  # ID della chat o del canale Telegram
-
-# --- FUNZIONE DI ANALISI DEL SENTIMENT (BUY / SELL) ---
+CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID', 'IL_TUO_CHAT_ID_QUI')
 
 
-def analizza_sentiment(titolo):
+# --- FUNZIONE DI INVIO MESSAGGI A TELEGRAM ---
+def invia_messaggio_telegram(testo):
+  url = f'https://api.telegram.org/bot{TOKEN}/sendMessage'
+  payload = {'chat_id': CHAT_ID, 'text': testo, 'parse_mode': 'Markdown'}
+  try:
+    response = requests.post(url, json=payload)
+    return response.json()
+  except Exception as e:
+    print(f"Errore nell'invio del messaggio Telegram: {e}")
+
+
+# --- 1. ANALISI NOTIZIE RSS (SEMPRE CON EMOJI) ---
+def analizza_sentiment_notizia(titolo):
   titolo_lower = titolo.lower()
 
-  # Parole chiave orientate al rialzo (BUY)
   parole_buy = [
       'punta',
       'crescita',
@@ -31,7 +39,6 @@ def analizza_sentiment(titolo):
       'supera',
       'in crescita',
   ]
-  # Parole chiave orientate al ribasso (SELL)
   parole_sell = [
       'perde slancio',
       'calo',
@@ -48,52 +55,69 @@ def analizza_sentiment(titolo):
   score_buy = sum(1 for p in parole_buy if p in titolo_lower)
   score_sell = sum(1 for p in parole_sell if p in titolo_lower)
 
-  if score_buy > score_sell:
-    return '🟢 **BUY / Rialzista 📈**'
-  elif score_sell > score_buy:
+  # Forziamo sempre un'etichetta chiara con emoji
+  if score_sell > score_buy:
     return '🔴 **SELL / Ribassista 📉**'
   else:
-    return '⚪ **NEUTRAL / Attesa ⚖️**'
-
-
-# --- FUNZIONE INVIO MESSAGGIO SU TELEGRAM ---
-
-
-def invia_messaggio_telegram(testo):
-  url = f'https://api.telegram.org/bot{TOKEN}/sendMessage'
-  payload = {'chat_id': CHAT_ID, 'text': testo, 'parse_mode': 'Markdown'}
-  try:
-    response = requests.post(url, json=payload)
-    return response.json()
-  except Exception as e:
-    print(f"Errore nell'invio del messaggio Telegram: {e}")
-
-
-# --- FUNZIONE CONTROLLO NOTIZIE RSS ---
+    # Di default o se rialzista, assegna BUY con emoji verde
+    return '🟢 **BUY / Rialzista 📈**'
 
 
 def controlla_notizie():
-  print('Controllo nuove notizie finanziarie in corso...')
-  # Esempio con un feed RSS finanziario (puoi aggiungere i tuoi link)
+  print('Controllo nuove notizie finanziarie...')
   url_rss = 'https://it.investing.com/rss/news.rss'
   feed = feedparser.parse(url_rss)
 
   if feed.entries:
-    ultima_notizia = feed.entries[0]
-    titolo = ultima_notizia.title
-    link = ultima_notizia.link
+    ultima = feed.entries[0]
+    titolo = ultima.title
+    link = ultima.link
 
-    # Esegue l'analisi automatica
-    segnale = analizza_sentiment(titolo)
+    segnale = analizza_sentiment_notizia(titolo)
 
-    # Compila il messaggio con le emoji e la direzione richiesta
-    messaggio = f"""ULTIMA ORA\n\n{titolo}\n\nAnalisi: {segnale}\n\nLeggi di più: {link}"""
-
-    # Invia il messaggio (puoi aggiungere un controllo per evitare di inviare due volte la stessa notizia)
+    messaggio = (
+        f'📰 **ULTIMA ORA MERCATO**\n\n'
+        f'{titolo}\n\n'
+        f'Analisi: {segnale}\n\n'
+        f'🔗 [Leggi di più]({link})'
+    )
     invia_messaggio_telegram(messaggio)
 
 
-# --- MINISERVER FLASK ANTI-SLEEP PER RENDER ---
+# --- 2. ANALISI TECNICA SMART AI (SEMPRE CON EMOJI) ---
+def analizza_crypto():
+  print('Analisi dati di mercato BTC in corso...')
+  try:
+    btc = yfinance.Ticker('BTC-USD')
+    df = btc.history(period='2d')
+
+    if len(df) >= 2:
+      prezzo_attuale = df['Close'].iloc[-1]
+      prezzo_precedente = df['Close'].iloc[-2]
+      var_pct = ((prezzo_attuale - prezzo_precedente) / prezzo_precedente) * 100
+
+      # Assegnazione rigida delle emoji in base alla variazione
+      if var_pct >= 0:
+        trend_icon = '🟢 **BUY / Rialzista 📈**'
+        stima_rialzo = 65
+      else:
+        trend_icon = '🔴 **SELL / Ribassista 📉**'
+        stima_rialzo = 35
+
+      stima_ribasso = 100 - stima_rialzo
+
+      messaggio = (
+          f'🤖 **ANALISI SMART AI: BTCUSD (BTC-USD)**\n'
+          f'Prezzo: `{prezzo_attuale:.4f}` | Variazione: `{var_pct:+.2f}%`\n'
+          f'Trend: {trend_icon}\n\n'
+          f'📊 Stime: Rialzo {stima_rialzo}% | Ribasso {stima_ribasso}%'
+      )
+      invia_messaggio_telegram(messaggio)
+  except Exception as e:
+    print(f"Errore durante l'analisi crypto: {e}")
+
+
+# --- MINISERVER FLASK (ANTI-SLEEP PER RENDER) ---
 app_web = Flask('')
 
 
@@ -112,18 +136,16 @@ def keep_alive():
   t.start()
 
 
-# --- AVVIO PRINCIPALE ---
+# --- AVVIO PRINCIPALE E SCHEDULATORE ---
 if __name__ == '__main__':
-  # 1. Avvia il server web in background per mantenere Render sveglio
   keep_alive()
   print('Server Flask in ascolto.')
 
-  # 2. Pianifica i controlli delle notizie (es. ogni 10 minuti)
-  schedule.every(10).minutes.do(controlla_notizie)
+  schedule.every(15).minutes.do(controlla_notizie)
+  schedule.every(1).hours.do(analizza_crypto)
 
   print('Bot avviato con successo e schedulatore attivo!')
 
-  # 3. Loop infinito per mantenere il bot in esecuzione
   while True:
     try:
       schedule.run_pending()
