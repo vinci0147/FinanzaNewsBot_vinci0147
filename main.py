@@ -33,7 +33,6 @@ def invia_messaggio_con_menu(chat_dest=None):
         "Seleziona un'opzione dai pulsanti sottostanti:"
     )
     
-    # Tastiera inline a pulsanti (come nello screenshot)
     tastiera = {
         "inline_keyboard": [
             [{"text": "Calendario Oggi", "callback_data": "cal_oggi"}, {"text": "Calendario 7GG", "callback_data": "cal_7gg"}],
@@ -134,44 +133,4 @@ def ascolta_comandi():
             res = requests.get(url, params={'offset': offset, 'timeout': 15}, timeout=20)
             if res.status_code == 200:
                 data = res.json()
-                for update in data.get("result", []):
-                    offset = update["update_id"] + 1
-                    
-                    # Gestione comandi di testo (/menu)
-                    if "message" in update and "text" in update["message"]:
-                        msg = update["message"]
-                        testo = msg.get("text", "")
-                        chat_id = msg.get("chat", {}).get("id")
-                        if testo and "/menu" in testo.lower():
-                            invia_messaggio_con_menu(chat_id)
-                            
-                    # Gestione click sui pulsanti della tastiera inline
-                    elif "callback_query" in update:
-                        query = update["callback_query"]
-                        chat_id = query["message"]["chat"]["id"]
-                        data_callback = query["data"]
-                        
-                        # Risposta rapida al click del pulsante
-                        callback_url = f"https://api.telegram.org/bot{TOKEN}/answerCallbackQuery"
-                        requests.post(callback_url, json={"callback_query_id": query["id"], "text": "Caricamento dati..."})
-                        
-                        if data_callback == "btc":
-                            analizza_crypto()
-                        elif data_callback == "news_oggi":
-                            controlla_notizie()
-                        else:
-                            invia_messaggio(f"Sezione '{data_callback}' selezionata. Aggiornamento in corso...", chat_id)
-                            
-        except Exception as e:
-                            print(f"Errore ascolto: {e}")
-                            time.sleep(5)
-
-# --- WORKER BACKGROUND ---
-def worker():
-    time.sleep(5)
-    invia_messaggio("SERVER ONLINE: Bot avviato con successo!")
-    
-    Thread(target=ascolta_comandi, daemon=True).start()
-    
-    schedule.every(15).minutes.do(controlla_notizie)
-    schedule.
+                for update in data
