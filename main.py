@@ -96,10 +96,10 @@ def analizza_crypto():
 
       # Assegnazione forzata dell'emoji e del trend
       if var_pct >= 0:
-        trend_icon = '🟢 **BUY / Rialzista 📈**'
+       trend_icon = "🟢 **BUY / Rialzista**"
         stima_rialzo = 65
       else:
-        trend_icon = '🔴 **SELL / Ribassista 📉**'
+        trend_icon = '🔴 **SELL / Ribassista **'
         stima_rialzo = 35
 
       stima_ribasso = 100 - stima_rialzo
