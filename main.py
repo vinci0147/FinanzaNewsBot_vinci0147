@@ -51,9 +51,9 @@ def analizza_sentiment_notizia(titolo):
   score_sell = sum(1 for p in parole_sell if p in titolo_lower)
 
   if score_sell > score_buy:
-    return '🔴 *SELL / Ribassista* 📉'
+    return '🔴 **SELL / RIBASSISTA**'
   else:
-    return '🟢 *BUY / Rialzista* 📈'
+    return '🟢 **BUY / RIALZISTA**'
 
 
 def controlla_notizie():
@@ -67,11 +67,14 @@ def controlla_notizie():
     link = ultima.link
     segnale = analizza_sentiment_notizia(titolo)
 
+    # Layout pulito ed elegante per le notizie
     messaggio = (
-        f'📰 *ULTIMA ORA MERCATO*\n\n'
+        f'📰 *ULTIMA ORA MERCATO*\n'
+        f'──────────────────\n'
         f'{titolo}\n\n'
-        f'Analisi: {segnale}\n\n'
-        f'🔗 [Leggi di più]({link})'
+        f'🎯 Segnale: {segnale}\n'
+        f'──────────────────\n'
+        f'🔗 [Leggi l\'articolo completo]({link})'
     )
     invia_messaggio_telegram(messaggio)
 
@@ -89,20 +92,26 @@ def analizza_crypto():
       var_pct = ((prezzo_attuale - prezzo_precedente) / prezzo_precedente) * 100
 
       if var_pct >= 0:
-        trend_icon = '🟢 *BUY / Rialzista* 📈'
+        trend_icon = '🟢 **BUY / RIALZISTA**'
         stima_rialzo = 65
       else:
-        trend_icon = '🔴 *SELL / Ribassista* 📉'
+        trend_icon = '🔴 **SELL / RIBASSISTA**'
         stima_rialzo = 35
 
       stima_ribasso = 100 - stima_rialzo
 
+      # Layout pulito e strutturato a blocchi per le cripto
       messaggio = (
-          f'🤖 *ANALISI SMART AI: BTCUSD* (BTC-USD)\n'
-          f'Prezzo: `{prezzo_attuale:.4f}` | Variazione: `{var_pct:+.2f}%`\n'
-          f'Trend: {trend_icon}\n\n'
-          f'Nessuna notizia macro correlata recente.\n\n'
-          f'📊 Stime: Rialzo {stima_rialzo}% | Ribasso {stima_ribasso}%'
+          f'🤖 *ANALISI SMART AI: BTCUSD*\n'
+          f'──────────────────\n'
+          f'💰 *Prezzo:* `{prezzo_attuale:.2f} USD`\n'
+          f'📈 *Variazione:* `{var_pct:+.2f}%`\n'
+          f'📊 *Trend:* {trend_icon}\n\n'
+          f'💬 *News:* Nessuna notizia macro correlata recente.\n\n'
+          f'🎯 *Stime di Mercato:*\n'
+          f'• Rialzo: `{stima_rialzo}%`\n'
+          f'• Ribasso: `{stima_ribasso}%`\n'
+          f'──────────────────'
       )
       invia_messaggio_telegram(messaggio)
   except Exception as e:
@@ -115,7 +124,7 @@ app_web = Flask('')
 
 @app_web.route('/')
 def home():
-  return 'Il bot di trading e sentiment analysis è attivo 24/7!'
+  return 'Il bot di trading è attivo 24/7!'
 
 
 def run():
