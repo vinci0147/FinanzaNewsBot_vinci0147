@@ -74,7 +74,6 @@ def invia_messaggio(testo, chat_dest=None):
 def analizza_impatto_notizia(titolo):
     t = titolo.lower()
     
-    # 1. Individuazione dell'Asset coinvolto
     asset_target = "Mercati Globali / Indici 🌐"
     if any(k in t for k in ["oro", "gold", "xau", "metalli"]):
         asset_target = "Oro (XAUUSD) 🥇"
@@ -91,7 +90,6 @@ def analizza_impatto_notizia(titolo):
     elif any(k in t for k in ["banche", "banca", "stocks", "azioni", "dirigente", "titolo"]):
         asset_target = "Azionario / Settore Bancario 🏦"
 
-    # 2. Valutazione Sentiment (Favorevole o Sfavorevole)
     parole_rosse = ["crisi", "crollo", "inflazione", "guerra", "tensioni", "recessione", "calo", "perdite", "debito", "allarme", "vendite", "scende"]
     parole_verdi = ["crescita", "rialzo", "record", "boom", "sviluppo", "accordo", "positivo", "utili", "super", "stabilità", "acquista", "sale"]
     
@@ -115,7 +113,6 @@ def controlla_notizie(chat_dest=None):
             ultima = feed.entries[0]
             asset_target, sentiment = analizza_impatto_notizia(ultima.title)
             
-            # Se automatico e neutro, scartiamo per non intasare
             if chat_dest is None and "NEUTRO" in sentiment:
                 return
             
@@ -291,4 +288,4 @@ def worker():
 if __name__ == '__main__':
     Thread(target=worker, daemon=True).start()
     port = int(os.environ.get('PORT', 8080))
-    app_web.run(host='0.0.0.0', port=port)se("
+    app_web.run(host='0.0.0.0', port=port)
