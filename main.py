@@ -12,7 +12,7 @@ TOKEN = os.environ.get('TELEGRAM_TOKEN', 'IL_TUO_TOKEN_QUI')
 CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID', 'IL_TUO_CHAT_ID_QUI')
 
 
-# --- FUNZIONE DI INVIO MESSAGGI A TELEGRAM (CON OPZIONE TASTIERA) ---
+# --- FUNZIONE DI INVIO MESSAGGI A TELEGRAM ---
 def invia_messaggio_telegram(testo, reply_markup=None):
   url = f'https://api.telegram.org/bot{TOKEN}/sendMessage'
   payload = {'chat_id': CHAT_ID, 'text': testo, 'parse_mode': 'Markdown'}
@@ -25,15 +25,14 @@ def invia_messaggio_telegram(testo, reply_markup=None):
     print(f"Errore nell'invio del messaggio Telegram: {e}")
 
 
-# --- FUNZIONE PER MANDARE IL PANNELLO INTERATTIVO ---
+# --- FUNZIONE PER MANDARE IL PANNELLO AGGIORNATO CON LE EMOJI ---
 def invia_pannello_comandi():
   testo_pannello = (
-      '🤖 *PANNELLO FOREX & MACRO NEWS*\n'
+      '🤖 *PANNELLO FOREX & SMART AI NEWS*\n'
       '──────────────────────────\n'
-      "Seleziona un'opzione dai pulsanti sottostanti:"
+      "✨ *Seleziona un'opzione dai pulsanti sottostanti:*"
   )
 
-  # Tastiera inline ricca di emoji esattamente come nel tuo screenshot
   tastiera = {
       'inline_keyboard': [
           [{'text': '📅 Calendario Oggi', 'callback_data': 'cal_oggi'}, {'text': '📊 Calendario 7GG', 'callback_data': 'cal_7gg'}],
@@ -154,6 +153,29 @@ def analizza_crypto():
     print(f"Errore durante l'analisi crypto: {e}")
 
 
+# --- ASCOLTO COMANDI TELEGRAM (PER AGGIORNARE IL MENU) ---
+def ascolta_comandi():
+  url_base = f'https://api.telegram.org/bot{TOKEN}'
+  offset = 0
+  print('In ascolto dei comandi Telegram (/menu)...')
+  while True:
+    try:
+      response = requests.get(
+          f'{url_base}/getUpdates', params={'offset': offset, 'timeout': 30}
+      )
+      data = response.json()
+      if 'result' in data:
+        for update in data['result']:
+          offset = update['update_id'] + 1
+          if 'message' in update and 'text' in update['message']:
+            testo_msg = update['message']['text']
+            if '/menu' in testo_msg:
+              invia_pannello_comandi()
+    except Exception as e:
+      print(f'Errore nel controllo dei comandi: {e}')
+      time.sleep(5)
+
+
 # --- MINISERVER FLASK (ANTI-SLEEP PER RENDER) ---
 app_web = Flask('')
 
@@ -173,10 +195,16 @@ def keep_alive():
   t.start()
 
 
+def avvia_ascolto():
+  t = Thread(target=ascolta_comandi)
+  t.start()
+
+
 # --- AVVIO PRINCIPALE ---
 if __name__ == '__main__':
   keep_alive()
-  print('Server Flask in ascolto.')
+  avvia_ascolto()
+  print('Server Flask e gestore comandi attivi.')
 
   schedule.every(15).minutes.do(controlla_notizie)
   schedule.every(1).hours.do(analizza_crypto)
