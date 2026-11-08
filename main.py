@@ -151,7 +151,7 @@ def analizza_crypto():
     print(f"Errore durante l'analisi crypto: {e}")
 
 
-# --- ASCOLTO COMANDI TELEGRAM SICURO ---
+# --- ASCOLTO COMANDI TELEGRAM ---
 def ascolta_comandi():
   url_base = f"https://api.telegram.org/bot{TOKEN}"
   offset = 0
@@ -168,28 +168,42 @@ def ascolta_comandi():
             if "/menu" in testo_msg:
               invia_pannello_comandi()
     except Exception as e:
-      print(f"Errore nel loop comandi (riprovo tra poco): {e}")
+      print(f"Errore nel loop comandi: {e}")
       time.sleep(5)
 
 
-# --- MINISERVER FLASK (ANTI-SLEEP PER RENDER) ---
+# --- WORKER DI BACKGROUND (SCHEDULER & BOT) ---
+def background_worker():
+  schedule.every(15).minutes.do(controlla_notizie)
+  schedule.every(1).hours.do(analizza_crypto)
+  
+  # Avvia il thread dei comandi
+  t_comandi = Thread(target=ascolta_comandi, daemon=True)
+  t_comandi.start()
+  
+  print("Schedulatore attivo in background.")
+  while True:
+    try:
+      schedule.run_pending()
+      time.sleep(1)
+    except Exception as e:
+      print(f"Errore nel loop schedule: {e}")
+      time.sleep(10)
+
+
+# --- MINISERVER FLASK (SUL THREAD PRINCIPALE PER RENDER) ---
 app_web = Flask('')
 
 @app_web.route('/')
 def home():
   return "Il bot di trading e sentiment analysis è attivo 24/7!"
 
-def run():
+
+if __name__ == '__main__':
+  # Avvia il worker in background prima di far partire Flask sul main thread
+  worker_thread = Thread(target=background_worker, daemon=True)
+  worker_thread.start()
+  
   port = int(os.environ.get('PORT', 8080))
+  print(f"Server Flask in ascolto sulla porta {port}...")
   app_web.run(host='0.0.0.0', port=port)
-
-def keep_alive():
-  t = Thread(target=run, daemon=True)
-  t.start()
-
-def avvia_ascolto():
-  t = Thread(target=ascolta_comandi, daemon=True)
-  t.start()
-
-
-# --- AVVIO PRINCIP
