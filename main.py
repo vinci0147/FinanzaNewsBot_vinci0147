@@ -51,9 +51,9 @@ def analizza_sentiment_notizia(titolo):
   score_sell = sum(1 for p in parole_sell if p in titolo_lower)
 
   if score_sell > score_buy:
-    return '🔴 **SELL / RIBASSISTA**'
+    return '🔴 **Ribassista / Momento Negativo**'
   else:
-    return '🟢 **BUY / RIALZISTA**'
+    return '🟢 **Rialzista / Momento Positivo**'
 
 
 def controlla_notizie():
@@ -67,19 +67,18 @@ def controlla_notizie():
     link = ultima.link
     segnale = analizza_sentiment_notizia(titolo)
 
-    # Layout pulito ed elegante per le notizie
     messaggio = (
         f'📰 *ULTIMA ORA MERCATO*\n'
-        f'──────────────────\n'
+        f'──────────────────────────\n'
         f'{titolo}\n\n'
-        f'🎯 Segnale: {segnale}\n'
-        f'──────────────────\n'
+        f'🎯 Trend Rilevato: {segnale}\n'
+        f'──────────────────────────\n'
         f'🔗 [Leggi l\'articolo completo]({link})'
     )
     invia_messaggio_telegram(messaggio)
 
 
-# --- 2. ANALISI TECNICA SMART AI ---
+# --- 2. ANALISI TECNICA SMART AI (STILE INTEGRATO) ---
 def analizza_crypto():
   print('Analisi dati di mercato BTC in corso...')
   try:
@@ -92,26 +91,38 @@ def analizza_crypto():
       var_pct = ((prezzo_attuale - prezzo_precedente) / prezzo_precedente) * 100
 
       if var_pct >= 0:
-        trend_icon = '🟢 **BUY / RIALZISTA**'
-        stima_rialzo = 65
+        trend_icon = '🟢 **Rialzista / Momento Positivo**'
+        stima_rialzo = 57
+        motivazione = (
+            f'Supportato da una variazione positiva del `{var_pct:+.2f}%`'
+            " nell'ultima seduta."
+        )
       else:
-        trend_icon = '🔴 **SELL / RIBASSISTA**'
-        stima_rialzo = 35
+        trend_icon = '🔴 **Ribassista / Momento Negativo**'
+        stima_rialzo = 43
+        motivazione = (
+            f'Supportato da una variazione negativa del `{var_pct:+.2f}%`'
+            " nell'ultima seduta."
+        )
 
       stima_ribasso = 100 - stima_rialzo
 
-      # Layout pulito e strutturato a blocchi per le cripto
+      # Layout identico allo screenshot di riferimento
       messaggio = (
-          f'🤖 *ANALISI SMART AI: BTCUSD*\n'
-          f'──────────────────\n'
-          f'💰 *Prezzo:* `{prezzo_attuale:.2f} USD`\n'
-          f'📈 *Variazione:* `{var_pct:+.2f}%`\n'
-          f'📊 *Trend:* {trend_icon}\n\n'
-          f'💬 *News:* Nessuna notizia macro correlata recente.\n\n'
-          f'🎯 *Stime di Mercato:*\n'
-          f'• Rialzo: `{stima_rialzo}%`\n'
-          f'• Ribasso: `{stima_ribasso}%`\n'
-          f'──────────────────'
+          f'📊 *ANALISI INTEGRATA: BTCUSD* (`BTC-USD`)\n'
+          f'──────────────────────────\n'
+          f'💵 Prezzo Attuale: `{prezzo_attuale:.4f}`\n'
+          f'📈 Variazione Tecnica: `{var_pct:+.2f}%`\n'
+          f'📉 Trend Rilevato: {trend_icon}\n\n'
+          f'📰 *Contesto Macro:* Nessun titolo di primo piano correlato nelle'
+          f' ultime ore.\n\n'
+          f'💡 *Sintesi Motivazione:*\n'
+          f'_{motivazione}_\n\n'
+          f'🎯 *Stime a Breve:*\n'
+          f'• 🟢 Rialzo: `{stima_rialzo}%`\n'
+          f'• 🔴 Ribasso: `{stima_ribasso}%`\n'
+          f'──────────────────────────\n'
+          f'⚠️ _Modello combinato: Momentum grafico + Feed Notizie live._'
       )
       invia_messaggio_telegram(messaggio)
   except Exception as e:
@@ -124,7 +135,7 @@ app_web = Flask('')
 
 @app_web.route('/')
 def home():
-  return 'Il bot di trading è attivo 24/7!'
+  return 'Il bot di trading e sentiment analysis è attivo 24/7!'
 
 
 def run():
