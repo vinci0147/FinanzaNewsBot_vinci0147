@@ -12,15 +12,41 @@ TOKEN = os.environ.get('TELEGRAM_TOKEN', 'IL_TUO_TOKEN_QUI')
 CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID', 'IL_TUO_CHAT_ID_QUI')
 
 
-# --- FUNZIONE DI INVIO MESSAGGI A TELEGRAM ---
-def invia_messaggio_telegram(testo):
+# --- FUNZIONE DI INVIO MESSAGGI A TELEGRAM (CON OPZIONE TASTIERA) ---
+def invia_messaggio_telegram(testo, reply_markup=None):
   url = f'https://api.telegram.org/bot{TOKEN}/sendMessage'
   payload = {'chat_id': CHAT_ID, 'text': testo, 'parse_mode': 'Markdown'}
+  if reply_markup:
+    payload['reply_markup'] = reply_markup
   try:
     response = requests.post(url, json=payload)
     return response.json()
   except Exception as e:
     print(f"Errore nell'invio del messaggio Telegram: {e}")
+
+
+# --- FUNZIONE PER MANDARE IL PANNELLO INTERATTIVO ---
+def invia_pannello_comandi():
+  testo_pannello = (
+      '🤖 *PANNELLO FOREX & MACRO NEWS*\n'
+      '──────────────────────────\n'
+      "Seleziona un'opzione dai pulsanti sottostanti:"
+  )
+
+  # Tastiera inline ricca di emoji esattamente come nel tuo screenshot
+  tastiera = {
+      'inline_keyboard': [
+          [{'text': '📅 Calendario Oggi', 'callback_data': 'cal_oggi'}, {'text': '📊 Calendario 7GG', 'callback_data': 'cal_7gg'}],
+          [{'text': '🚨 Ultime Notizie', 'callback_data': 'news_ultime'}, {'text': '📰 Notizie 7GG', 'callback_data': 'news_7gg'}],
+          [{'text': '🟡 Oro (XAUUSD)', 'callback_data': 'oro'}, {'text': '🟠 Bitcoin (BTC)', 'callback_data': 'btc'}],
+          [{'text': '💱 EUR/USD', 'callback_data': 'eurusd'}, {'text': '💱 GBP/USD', 'callback_data': 'gbpusd'}],
+          [{'text': '💱 USD/JPY', 'callback_data': 'usdjpy'}, {'text': '💱 USD/CHF', 'callback_data': 'usdchf'}],
+          [{'text': '💱 AUD/USD', 'callback_data': 'audusd'}, {'text': '💱 USD/CAD', 'callback_data': 'usdcad'}],
+          [{'text': '💱 NZD/USD', 'callback_data': 'nzdusd'}, {'text': '💱 EUR/GBP', 'callback_data': 'eurgbp'}],
+          [{'text': 'ℹ️ Guida Comandi', 'callback_data': 'guida'}],
+      ]
+  }
+  invia_messaggio_telegram(testo_pannello, reply_markup=tastiera)
 
 
 # --- 1. ANALISI NOTIZIE RSS ---
@@ -107,7 +133,6 @@ def analizza_crypto():
 
       stima_ribasso = 100 - stima_rialzo
 
-      # Layout identico allo screenshot di riferimento
       messaggio = (
           f'📊 *ANALISI INTEGRATA: BTCUSD* (`BTC-USD`)\n'
           f'──────────────────────────\n'
