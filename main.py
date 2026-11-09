@@ -13,7 +13,7 @@ import yfinance
 TOKEN = os.environ.get('TELEGRAM_TOKEN')
 CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID')
 
-# Memoria per evitare di inviare la stessa notizia due volte consecutive
+# Memoria per evitare doppioni
 ULTIMO_LINK_INVIATO = ""
 
 # --- SERVER FLASK (PER RENDER) ---
@@ -74,7 +74,7 @@ def invia_messaggio(testo, chat_dest=None):
     except Exception as e:
         print(f"Errore invio Telegram: {e}")
 
-# --- ANALISI MIRATA PER ASSET SPECIFICI ---
+# --- ANALISI E FILTRAGGIO SELETTIVO DEGLI ASSET ---
 def analizza_impatto_notizia(titolo):
     t = titolo.lower()
     
@@ -91,6 +91,7 @@ def analizza_impatto_notizia(titolo):
     else:
         sentiment_base = "NEUTRO / In attesa di dati ⚪⚖️"
 
+    # Riconoscimento mirato esclusivamente ai tuoi asset
     if any(k in t for k in ["oro", "gold", "xau", "metalli"]):
         if "FAVOREVOLE" in sentiment_base:
             return "Oro (XAUUSD) 🥇", "FAVOREVOLE al Buy (Rialzo Metalli) 🟢📈"
@@ -107,7 +108,7 @@ def analizza_impatto_notizia(titolo):
         else:
             return "Bitcoin (BTC) 🪙", "NEUTRO per BTC ⚪⚖️"
             
-    elif any(k in t for k in ["euro", "bce", "lagarde", "germania", "francia"]):
+    elif any(k in t for k in ["euro", "bce", "lagarde", "germania", "francia", "eur"]):
         if "FAVOREVOLE" in sentiment_base:
             return "EUR/USD & EUR/GBP 💶🇪🇺", "FAVOREVOLE per l'Euro 🟢📈"
         else:
@@ -119,16 +120,40 @@ def analizza_impatto_notizia(titolo):
         else:
             return "GBP/USD 💷", "SFAVOREVOLE per la Sterlina 🔴📉"
             
-    elif any(k in t for k in ["dollaro", "fed", "powell", "usa", "stati uniti", "inflazione", "tassi", "occupazione", "pil"]):
+    elif any(k in t for k in ["yen", "giappone", "jpy", "boj"]):
         if "FAVOREVOLE" in sentiment_base:
-            return "USD (Dollaro / Forex) 💵", "FAVOREVOLE per USD (Sfavorevole EUR/USD) 🟢🇺🇸"
+            return "USD/JPY 💴", "FAVOREVOLE per lo Yen 🟢📈"
         else:
-            return "USD (Dollaro / Forex) 💵", "SFAVOREVOLE per USD (Favorevole EUR/USD) 🔴🇺🇸"
+            return "USD/JPY 💴", "SFAVOREVOLE per lo Yen 🔴📉"
+
+    elif any(k in t for k in ["franco", "svizzera", "chf"]):
+        if "FAVOREVOLE" in sentiment_base:
+            return "USD/CHF 🇨🇭", "FAVOREVOLE per il Franco 🟢📈"
+        else:
+            return "USD/CHF 🇨🇭", "SFAVOREVOLE per il Franco 🔴📉"
+
+    elif any(k in t for k in ["australiano", "aud", "rba"]):
+        if "FAVOREVOLE" in sentiment_base:
+            return "AUD/USD 🇦🇺", "FAVOREVOLE per AUD 🟢📈"
+        else:
+            return "AUD/USD 🇦🇺", "SFAVOREVOLE per AUD 🔴📉"
+
+    elif any(k in t for k in ["canadese", "cad", "boc"]):
+        if "FAVOREVOLE" in sentiment_base:
+            return "USD/CAD 🇨🇦", "FAVOREVOLE per CAD 🟢📈"
+        else:
+            return "USD/CAD 🇨🇦", "SFAVOREVOLE per CAD 🔴📉"
+
+    elif any(k in t for k in ["dollaro", "fed", "powell", "usa", "stati uniti", "inflazione", "tassi", "occupazione", "pil", "usd"]):
+        if "FAVOREVOLE" in sentiment_base:
+            return "USD (Dollaro / Forex) 💵", "FAVOREVOLE per USD 🟢🇺🇸"
+        else:
+            return "USD (Dollaro / Forex) 💵", "SFAVOREVOLE per USD 🔴🇺🇸"
             
     else:
-        return "Mercati Generali / Forex 🌐", sentiment_base
+        return None, None
 
-# --- RSS NEWS (CON FILTRO ANTI-DOPPIONI) ---
+# --- RSS NEWS (FILTRO RIGIDO ANTISPAM) ---
 def controlla_notizie(chat_dest=None):
     global ULTIMO_LINK_INVIATO
     try:
@@ -136,18 +161,19 @@ def controlla_notizie(chat_dest=None):
         if feed.entries:
             ultima = feed.entries[0]
             
-            # Se la notizia è esattamente la stessa dell'ultimo invio automatico, blocca l'invio
             if chat_dest is None and ultima.link == ULTIMO_LINK_INVIATO:
                 return
 
             asset_target, sentiment = analizza_impatto_notizia(ultima.title)
             
-            # Se automatico e neutro, scartiamo per non intasare
+            if asset_target is None:
+                return
+            
             if chat_dest is None and "NEUTRO" in sentiment:
                 return
             
             msg = (
-                f"🚨 **ULTIMA ORA MERCATO FINANZIARIO** 🚨\n"
+                f"🚨 **ULTIMA ORA ASSET TARGET** 🚨\n"
                 f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
                 f"📌 *Titolo:* {ultima.title}\n\n"
                 f"🎯 *Asset Specifico:* {asset_target}\n"
@@ -157,25 +183,33 @@ def controlla_notizie(chat_dest=None):
             
             invia_messaggio(msg, chat_dest)
             
-            # Aggiorna la memoria del link inviato (solo per i controlli automatici)
             if chat_dest is None:
                 ULTIMO_LINK_INVIATO = ultima.link
                 
     except Exception as e:
         print(f"Errore RSS: {e}")
 
-# --- NOTIZIE 7GG (ULTIME 5 NEWS) ---
+# --- NOTIZIE 7GG (FILTRATE SOLO PER ASSET VALIDI) ---
 def notizie_sette_giorni(chat_dest=None):
     try:
         feed = feedparser.parse("https://it.investing.com/rss/news.rss")
         if feed.entries:
-            msg = "📰 **PANNELLO ULTIME 5 NOTIZIE & IMPATTO ASSET** 📊\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-            for i, entry in enumerate(feed.entries[:5]):
+            msg = "📰 **PANNELLO NOTIZIE UTILI & ASSET** 📊\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            trovate = 0
+            for entry in feed.entries:
                 asset_target, sentiment = analizza_impatto_notizia(entry.title)
-                msg += f"🔹 *{i+1}.* {entry.title}\n   🎯 *Asset:* {asset_target}\n   ↳ *Impatto:* {sentiment}\n\n"
-            invia_messaggio(msg, chat_dest)
+                if asset_target is not None:
+                    trovate += 1
+                    msg += f"🔹 *{trovate}.* {entry.title}\n   🎯 *Asset:* {asset_target}\n   ↳ *Impatto:* {sentiment}\n\n"
+                    if trovate >= 5:
+                        break
+            
+            if trovate > 0:
+                invia_messaggio(msg, chat_dest)
+            else:
+                invia_messaggio("⚠️ Nessuna notizia recente specifica per i tuoi asset.", chat_dest)
         else:
-            invia_messaggio("⚠️ Nessuna notizia recente trovata nei feed.", chat_dest)
+            invia_messaggio("⚠️ Nessuna notizia trovata nei feed.", chat_dest)
     except Exception as e:
         print(f"Errore Notizie 7GG: {e}")
 
@@ -187,9 +221,8 @@ def invia_calendario(tipo, chat_dest=None):
         
         if feed.entries:
             for entry in feed.entries:
-                t = entry.title.lower()
-                if any(k in t for k in ["bce", "fed", "inflazione", "tassi", "pil", "occupazione", "discorso", "banca centrale", "dollaro", "euro", "petrolio", "oro"]):
-                    asset_target, sentiment = analizza_impatto_notizia(entry.title)
+                asset_target, sentiment = analizza_impatto_notizia(entry.title)
+                if asset_target is not None:
                     eventi_rilevanti.append(f"📌 *{entry.title}*\n   🎯 *Interessa:* {asset_target}\n   ⚡ *Previsione:* {sentiment}\n")
 
         if tipo == "oggi":
@@ -197,13 +230,13 @@ def invia_calendario(tipo, chat_dest=None):
             if eventi_rilevanti:
                 msg += "\n".join(eventi_rilevanti[:3])
             else:
-                msg += "🟢 *Nessun evento macro ad alto impatto nelle ultime ore.* Il mercato prosegue sui livelli tecnici.\n"
+                msg += "🟢 *Nessun evento macro ad alto impatto per i tuoi asset nelle ultime ore.*\n"
         else:
             msg = "📆 **CALENDARIO MACRO & EVENTI - PROSSIMI 7 GIORNI** 📈\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
             if eventi_rilevanti:
                 msg += "\n".join(eventi_rilevanti[:6])
             else:
-                msg += "🟢 *Monitoraggio settimanale attivo:* Nessun evento critico straordinario segnalato al momento.\n"
+                msg += "🟢 *Monitoraggio settimanale attivo:* Nessun evento critico straordinario segnalato.\n"
                 
         msg += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
         invia_messaggio(msg, chat_dest)
@@ -315,7 +348,7 @@ def ascolta_comandi():
                         elif data_callback == "cal_7gg":
                             invia_calendario("7gg", chat_id)
                         elif data_callback == "guida":
-                            invia_messaggio("📖 *GUIDA BOT:*\n- Usa `/menu` per la plancia.\n- Usa `/restart` per riavviare il bot all'istante! 🚀🔥", chat_id)
+                            invia_messaggio("📖 *GUIDA BOT:*\n- Filtro rigido anti-spam attivo.\n- Usa `/restart` per riavviare all'istante! 🚀🔥", chat_id)
                         else:
                             invia_messaggio(f"✨ Sezione `{data_callback}` aperta con successo!", chat_id)
                             
@@ -326,12 +359,11 @@ def ascolta_comandi():
 # --- WORKER BACKGROUND ---
 def worker():
     time.sleep(5)
-    invia_messaggio("🚀 *SERVER ONLINE:* Filtro anti-doppioni attivo! Non riceverai più la stessa notizia due volte. 🟢🔥")
+    invia_messaggio("🚀 *SERVER ONLINE:* Bot operativo con filtro anti-spam rigoroso! 🟢🔥")
     
     Thread(target=ascolta_comandi, daemon=True).start()
     
     schedule.every(15).minutes.do(lambda: controlla_notizie())
-    schedule.every(1).hours.do(lambda: analizza_asset("BTC-USD", "BITCOIN (BTC)"))
     
     while True:
         schedule.run_pending()
