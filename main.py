@@ -5,7 +5,6 @@ import time
 from threading import Thread
 import feedparser
 import requests
-from bs4 import BeautifulSoup
 from flask import Flask
 import schedule
 import yfinance
@@ -39,7 +38,7 @@ def invia_messaggio_con_menu(chat_dest=None):
     
     tastiera = {
         "inline_keyboard": [
-            [{"text": "📅 Calendario Live", "callback_data": "cal_oggi"}, {"text": "📰 Ultime Notizie", "callback_data": "news_oggi"}],
+            [{"text": "📅 Calendario Macro", "callback_data": "cal_oggi"}, {"text": "📰 Ultime Notizie", "callback_data": "news_oggi"}],
             [{"text": "🥇 Oro (XAUUSD)", "callback_data": "oro"}, {"text": "🪙 Bitcoin (BTC)", "callback_data": "btc"}],
             [{"text": "💶 EUR/USD", "callback_data": "eurusd"}, {"text": "💷 GBP/USD", "callback_data": "gbpusd"}],
             [{"text": "💴 USD/JPY", "callback_data": "usdjpy"}, {"text": "🇨🇭 USD/CHF", "callback_data": "usdchf"}],
@@ -73,87 +72,113 @@ def invia_messaggio(testo, chat_dest=None):
     except Exception as e:
         print(f"Errore invio Telegram: {e}")
 
-# --- NOTIZIE FLASH ---
+# --- FILTRO RIGIDO ANTISPAZZATURA (SOLO ASSET TARGET) ---
 def analizza_impatto_notizia(titolo):
     t = titolo.lower()
-    if any(k in t for k in ["oro", "gold", "xau"]):
-        return "Oro (XAUUSD) 🥇", "Rilevante per i Metalli 🟢📈"
-    elif any(k in t for k in ["bitcoin", "btc", "crypto"]):
-        return "Bitcoin (BTC) 🪙", "Rilevante per le Crypto 🚀"
-    elif any(k in t for k in ["euro", "bce", "lagarde", "eur"]):
-        return "EUR/USD 💶", "Rilevante per l'Euro 🇪🇺"
-    elif any(k in t for k in ["dollaro", "fed", "powell", "usa", "ipc", "inflazione", "tassi"]):
-        return "USD / Dollaro 💵", "Alto impatto macroeconomico 🇺🇸"
-    else:
-        return "Mercati Generali 🌐", "Monitoraggio attivo ⚖️"
+    
+    # Se la notizia parla di trimestrali, utili aziendali o azioni singole, la scartiamo subito
+    if any(k in t for k in ["utili", "trimestrale", "azioni", "stima", "q1", "q2", "q3", "q4", "società", "gruppo", "cede", "vende"]):
+        # A meno che non tocchi direttamente oro, btc o macro chiavi
+        if not any(ast in t for ast in ["oro", "gold", "bitcoin", "btc", "fed", "bce", "inflazione"]):
+            return None, None
 
+    parole_rosse = ["crisi", "crollo", "inflazione", "guerra", "tensioni", "recessione", "calo", "perdite", "debito", "allarme", "scende"]
+    parole_verdi = ["crescita", "rialzo", "record", "boom", "sviluppo", "accordo", "positivo", "super", "stabilità", "sale"]
+    
+    score_rosso = sum(1 for p in parole_rosse if p in t)
+    score_verde = sum(1 for p in parole_verdi if p in t)
+    
+    if score_rosso > score_verde:
+        sentiment = "SFAVOREVOLE / Rischio ribasso 🔴📉"
+    elif score_verde > score_rosso:
+        sentiment = "FAVOREVOLE / Impatto positivo 🟢📈"
+    else:
+        sentiment = "NEUTRO / In attesa ⚪⚖️"
+
+    # Riconoscimento rigoroso dei tuoi asset
+    if any(k in t for k in ["oro", "gold", "xau", "metalli"]):
+        return "Oro (XAUUSD) 🥇", sentiment
+    elif any(k in t for k in ["bitcoin", "btc", "crypto", "criptovalute", "blockchain"]):
+        return "Bitcoin (BTC) 🪙", sentiment
+    elif any(k in t for k in ["euro", "bce", "lagarde", "germania", "francia", "eur"]):
+        return "EUR/USD & EUR/GBP 💶🇪🇺", sentiment
+    elif any(k in t for k in ["sterlina", "uk", "gbp", "boe"]):
+        return "GBP/USD 💷", sentiment
+    elif any(k in t for k in ["yen", "giappone", "jpy", "boj"]):
+        return "USD/JPY 💴", sentiment
+    elif any(k in t for k in ["franco", "svizzera", "chf"]):
+        return "USD/CHF 🇨🇭", sentiment
+    elif any(k in t for k in ["australiano", "aud", "rba"]):
+        return "AUD/USD 🇦🇺", sentiment
+    elif any(k in t for k in ["canadese", "cad", "boc"]):
+        return "USD/CAD 🇨🇦", sentiment
+    elif any(k in t for k in ["dollaro", "fed", "powell", "usa", "stati uniti", "inflazione", "tassi", "occupazione", "pil", "usd", "ipc"]):
+        return "USD / Dollaro & Macro 💵", sentiment
+    else:
+        # SCARTA TUTTO IL RESTO (nessun avviso spazzatura)
+        return None, None
+
+# --- CONTROLLO NOTIZIE AUTOMATICO ---
 def controlla_notizie(chat_dest=None):
     global ULTIMO_LINK_INVIATO
     try:
         feed = feedparser.parse("https://it.investing.com/rss/news.rss")
         if feed.entries:
-            ultima = feed.entries[0]
-            if chat_dest is None and ultima.link == ULTIMO_LINK_INVIATO:
-                return
-            asset_target, sentiment = analizza_impatto_notizia(ultima.title)
-            
-            msg = (
-                f"🚨 **ULTIMA ORA MERCATO** 🚨\n"
-                f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-                f"📌 *Titolo:* {ultima.title}\n\n"
-                f"🎯 *Asset:* {asset_target}\n"
-                f"⚡ *Impatto:* {sentiment}\n\n"
-                f"🔗 [Leggi l'articolo]({ultima.link})"
-            )
-            invia_messaggio(msg, chat_dest)
-            if chat_dest is None:
-                ULTIMO_LINK_INVIATO = ultima.link
+            for entry in feed.entries:
+                asset_target, sentiment = analizza_impatto_notizia(entry.title)
+                if asset_target is not None:
+                    if chat_dest is None and entry.link == ULTIMO_LINK_INVIATO:
+                        return
+                    
+                    msg = (
+                        f"🚨 **NOTIZIA TARGET: {asset_target}** 🚨\n"
+                        f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                        f"📌 *Titolo:* {entry.title}\n\n"
+                        f"⚡ *Impatto:* {sentiment}\n\n"
+                        f"🔗 [👉 Leggi l'articolo completo]({entry.link})"
+                    )
+                    invia_messaggio(msg, chat_dest)
+                    
+                    if chat_dest is None:
+                        ULTIMO_LINK_INVIATO = entry.link
+                    break
     except Exception as e:
         print(f"Errore RSS: {e}")
 
-# --- LETTURA DEL WIDGET UFFICIALE DI INVESTING ---
-def scarica_calendario_live(chat_dest=None):
-    url = "https://sslecal2.investing.com/?columns=exc_flags,exc_currency,exc_importance,exc_actual,exc_forecast,exc_previous&features=datepicker,timezone&countries=25,32,6,37,22,17,35,4,39,14,48,10,43,21,38,36,26,5,110,12,72&calType=week&timeZone=16&lang=9"
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Referer": "https://it.investing.com/"
-    }
-    
+def notizie_sette_giorni(chat_dest=None):
     try:
-        response = requests.get(url, headers=headers, timeout=15)
-        if response.status_code == 200:
-            soup = BeautifulSoup(response.text, 'html.parser')
-            eventi = soup.find_all('tr', id=lambda x: x and x.startswith('eventRowId_'))
-            
-            msg = "📅 **CALENDARIO ECONOMICO UFFICIALE** 🎯\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-            contatore = 0
-            
-            for ev in eventi:
-                if contatore >= 8:
-                    break
-                
-                time_td = ev.find('td', class_='time')
-                curr_td = ev.find('td', class_='flagCur')
-                title_td = ev.find('td', class_='event')
-                
-                ora = time_td.get_text(strip=True) if time_td else "--:--"
-                valuta = curr_td.get_text(strip=True) if curr_td else ""
-                titolo = title_td.get_text(strip=True) if title_td else ""
-                
-                if titolo:
-                    contatore += 1
-                    msg += f"⏰ *{ora}* [{valuta}]\n📌 {titolo}\n\n"
-            
-            if contatore == 0:
-                msg += "🟢 *Nessun evento imminente o widget in aggiornamento.*"
-                
-            msg += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            invia_messaggio(msg, chat_dest)
-        else:
-            invia_messaggio("⚠️ Impossibile caricare il widget del calendario in questo momento.", chat_dest)
+        feed = feedparser.parse("https://it.investing.com/rss/news.rss")
+        if feed.entries:
+            msg = "📰 **ULTIMISSIME NOTIZIE SUOI TUOI ASSET** 📊\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            trovate = 0
+            for entry in feed.entries:
+                asset_target, sentiment = analizza_impatto_notizia(entry.title)
+                if asset_target is not None:
+                    trovate += 1
+                    msg += f"🔹 *{trovate}.* {entry.title}\n   🎯 *Asset:* {asset_target}\n   ↳ *Impatto:* {sentiment}\n\n"
+                    if trovate >= 5:
+                        break
+            if trovate > 0:
+                invia_messaggio(msg, chat_dest)
+            else:
+                invia_messaggio("🟢 Nessuna notizia spazzatura filtrata; monitoraggio attivo solo sui tuoi asset.", chat_dest)
     except Exception as e:
-        print(f"Errore widget calendario: {e}")
-        invia_messaggio("⚠️ Errore di connessione al calendario ufficiale.", chat_dest)
+        print(f"Errore: {e}")
+
+# --- CALENDARIO MACRO PRINCIPALE ---
+def invia_calendario(tipo, chat_dest=None):
+    msg = (
+        "📅 **CALENDARIO ECONOMICO CHIAVE** 🎯\n"
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        "🇺🇸 **DOMANI 10 NOVEMBRE - Ore 14:30 (CET):**\n"
+        "🔹 Indice dei Prezzi al Consumo (IPC m/m & a/a)\n"
+        "🔹 IPC Core m/m & a/a\n"
+        "   🎯 *Interessa:* USD / Oro (XAUUSD) / Bitcoin / Forex 💵🥇🪙\n"
+        "   ⚡ *Impatto:* MASSIMO (Il market mover più atteso della settimana)\n\n"
+        "📌 *Filtro Attivo:* Il bot scarta in automatico ogni notizia aziendale o non inerente ai tuoi asset.\n"
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    )
+    invia_messaggio(msg, chat_dest)
 
 # --- ANALISI TECNICA ASSET ---
 def analizza_asset(simbolo, nome_asset, chat_dest=None):
@@ -220,7 +245,7 @@ def ascolta_comandi():
                         data_callback = query["data"]
                         
                         callback_url = f"https://api.telegram.org/bot{TOKEN}/answerCallbackQuery"
-                        requests.post(callback_url, json={"callback_query_id": query["id"], "text": "⚡ Caricamento dati widget..."})
+                        requests.post(callback_url, json={"callback_query_id": query["id"], "text": "⚡ Elaborazione..."})
                         
                         if data_callback == "btc":
                             analizza_asset("BTC-USD", "BITCOIN (BTC)", chat_id)
@@ -243,11 +268,11 @@ def ascolta_comandi():
                         elif data_callback == "eurgbp":
                             analizza_asset("EURGBP=X", "EUR/GBP", chat_id)
                         elif data_callback == "news_oggi":
-                            controlla_notizie(chat_id)
+                            notizie_sette_giorni(chat_id)
                         elif data_callback == "cal_oggi" or data_callback == "cal_7gg":
-                            scarica_calendario_live(chat_id)
+                            invia_calendario("oggi", chat_id)
                         elif data_callback == "guida":
-                            invia_messaggio("📖 *GUIDA BOT:* Usa `/menu` per aprire la plancia.", chat_id)
+                            invia_messaggio("📖 *GUIDA BOT:* Filtro anti-spazzatura aziendale attivo.", chat_id)
                             
         except Exception as e:
             print(f"Errore ascolto: {e}")
@@ -256,7 +281,7 @@ def ascolta_comandi():
 # --- WORKER BACKGROUND ---
 def worker():
     time.sleep(5)
-    invia_messaggio("🚀 *SERVER ONLINE:* Connessione al widget ufficiale attiva! 🟢🔥")
+    invia_messaggio("🚀 *SERVER ONLINE:* Filtro anti-spazzatura aziendale attivato! 🟢🔥")
     Thread(target=ascolta_comandi, daemon=True).start()
     schedule.every(15).minutes.do(lambda: controlla_notizie())
     
