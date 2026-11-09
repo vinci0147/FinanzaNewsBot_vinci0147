@@ -79,7 +79,7 @@ def analizza_impatto_notizia(titolo):
     if any(k in t for k in ["oro", "gold", "xau"]):
         return "Oro (XAUUSD) 🥇", "Rilevante per i Metalli 🟢📈"
     elif any(k in t for k in ["bitcoin", "btc", "crypto"]):
-        return "Bitcoin (BTC) 🪙", "Rilevante per las Crypto 🚀"
+        return "Bitcoin (BTC) 🪙", "Rilevante per le Crypto 🚀"
     elif any(k in t for k in ["euro", "bce", "lagarde", "eur"]):
         return "EUR/USD 💶", "Rilevante per l'Euro 🇪🇺"
     elif any(k in t for k in ["dollaro", "fed", "powell", "usa", "ipc", "inflazione", "tassi"]):
@@ -111,9 +111,8 @@ def controlla_notizie(chat_dest=None):
     except Exception as e:
         print(f"Errore RSS: {e}")
 
-# --- LETTURA DIRETTA DAL WIDGET UFFICIALE DI INVESTING ---
+# --- LETTURA DEL WIDGET UFFICIALE DI INVESTING ---
 def scarica_calendario_live(chat_dest=None):
-    # Sfruttiamo direttamente l'URL dell'iframe che hai fornito
     url = "https://sslecal2.investing.com/?columns=exc_flags,exc_currency,exc_importance,exc_actual,exc_forecast,exc_previous&features=datepicker,timezone&countries=25,32,6,37,22,17,35,4,39,14,48,10,43,21,38,36,26,5,110,12,72&calType=week&timeZone=16&lang=9"
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -123,9 +122,3 @@ def scarica_calendario_live(chat_dest=None):
     try:
         response = requests.get(url, headers=headers, timeout=15)
         if response.status_code == 200:
-            soup = BeautifulSoup(response.text, 'html.parser')
-            # Individua le righe degli eventi nel widget ufficiale
-            eventi = soup.find_all('tr', id=lambda x: x and x.startswith('eventRowId_'))
-            
-            msg = "📅 **CALENDARIO ECONOMICO UFFICIALE** 🎯\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-            contatore = 
