@@ -91,7 +91,6 @@ def analizza_impatto_notizia(titolo):
     else:
         sentiment_base = "NEUTRO / In attesa di dati ⚪⚖️"
 
-    # Riconoscimento mirato esclusivamente ai tuoi asset
     if any(k in t for k in ["oro", "gold", "xau", "metalli"]):
         if "FAVOREVOLE" in sentiment_base:
             return "Oro (XAUUSD) 🥇", "FAVOREVOLE al Buy (Rialzo Metalli) 🟢📈"
@@ -144,7 +143,7 @@ def analizza_impatto_notizia(titolo):
         else:
             return "USD/CAD 🇨🇦", "SFAVOREVOLE per CAD 🔴📉"
 
-    elif any(k in t for k in ["dollaro", "fed", "powell", "usa", "stati uniti", "inflazione", "tassi", "occupazione", "pil", "usd"]):
+    elif any(k in t for k in ["dollaro", "fed", "powell", "usa", "stati uniti", "inflazione", "tassi", "occupazione", "pil", "usd", "ipc", "indice"]):
         if "FAVOREVOLE" in sentiment_base:
             return "USD (Dollaro / Forex) 💵", "FAVOREVOLE per USD 🟢🇺🇸"
         else:
@@ -189,7 +188,7 @@ def controlla_notizie(chat_dest=None):
     except Exception as e:
         print(f"Errore RSS: {e}")
 
-# --- NOTIZIE 7GG (FILTRATE SOLO PER ASSET VALIDI) ---
+# --- NOTIZIE 7GG ---
 def notizie_sette_giorni(chat_dest=None):
     try:
         feed = feedparser.parse("https://it.investing.com/rss/news.rss")
@@ -213,30 +212,33 @@ def notizie_sette_giorni(chat_dest=None):
     except Exception as e:
         print(f"Errore Notizie 7GG: {e}")
 
-# --- CALENDARIO ECONOMICO DINAMICO ---
+# --- CALENDARIO ECONOMICO REALE (COLLEGATO AL FEED DEDICATO) ---
 def invia_calendario(tipo, chat_dest=None):
     try:
-        feed = feedparser.parse("https://it.investing.com/rss/news.rss")
+        # Legge direttamente il feed ufficiale degli eventi macroeconomici e del calendario di Investing
+        feed = feedparser.parse("https://it.investing.com/rss/economic-calendar.rss")
         eventi_rilevanti = []
         
         if feed.entries:
             for entry in feed.entries:
                 asset_target, sentiment = analizza_impatto_notizia(entry.title)
-                if asset_target is not None:
-                    eventi_rilevanti.append(f"📌 *{entry.title}*\n   🎯 *Interessa:* {asset_target}\n   ⚡ *Previsione:* {sentiment}\n")
+                # Se l'evento tocca un asset o contiene dati macro (IPC, tassi, PIL, ecc.)
+                if asset_target is not None or any(k in entry.title.lower() for k in ["ipc", "pmi", "pil", "tassi", "discorso", "bce", "fed", "occupazione"]):
+                    target_display = asset_target if asset_target else "Dollaro / Macro Generale 💵"
+                    eventi_rilevanti.append(f"📌 *{entry.title}*\n   🎯 *Interessa:* {target_display}\n   ⚡ *Previsione:* {sentiment}\n")
 
         if tipo == "oggi":
-            msg = "📅 **CALENDARIO & EVENTI CHIAVE - OGGI** 🎯\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            msg = "📅 **CALENDARIO ECONOMICO - OGGI** 🎯\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
             if eventi_rilevanti:
-                msg += "\n".join(eventi_rilevanti[:3])
+                msg += "\n".join(eventi_rilevanti[:6]) # Mostra gli eventi principali del giorno
             else:
-                msg += "🟢 *Nessun evento macro ad alto impatto per i tuoi asset nelle ultime ore.*\n"
+                msg += "🟢 *Nessun evento macro critico registrato al momento nel feed.* \n"
         else:
-            msg = "📆 **CALENDARIO MACRO & EVENTI - PROSSIMI 7 GIORNI** 📈\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            msg = "📆 **CALENDARIO ECONOMICO - PROSSIMI 7 GIORNI** 📈\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
             if eventi_rilevanti:
-                msg += "\n".join(eventi_rilevanti[:6])
+                msg += "\n".join(eventi_rilevanti[:10]) # Mostra la panoramica settimanale completa
             else:
-                msg += "🟢 *Monitoraggio settimanale attivo:* Nessun evento critico straordinario segnalato.\n"
+                msg += "🟢 *Nessun evento critico straordinario segnalato nel periodo.* \n"
                 
         msg += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
         invia_messaggio(msg, chat_dest)
@@ -348,7 +350,7 @@ def ascolta_comandi():
                         elif data_callback == "cal_7gg":
                             invia_calendario("7gg", chat_id)
                         elif data_callback == "guida":
-                            invia_messaggio("📖 *GUIDA BOT:*\n- Filtro rigido anti-spam attivo.\n- Usa `/restart` per riavviare all'istante! 🚀🔥", chat_id)
+                            invia_messaggio("📖 *GUIDA BOT:*\n- Calendario macroeconomico reale attivo.\n- Usa `/restart` per riavviare all'istante! 🚀🔥", chat_id)
                         else:
                             invia_messaggio(f"✨ Sezione `{data_callback}` aperta con successo!", chat_id)
                             
@@ -359,7 +361,7 @@ def ascolta_comandi():
 # --- WORKER BACKGROUND ---
 def worker():
     time.sleep(5)
-    invia_messaggio("🚀 *SERVER ONLINE:* Bot operativo con filtro anti-spam rigoroso! 🟢🔥")
+    invia_messaggio("🚀 *SERVER ONLINE:* Calendario economico reale sincronizzato! 🟢🔥")
     
     Thread(target=ascolta_comandi, daemon=True).start()
     
