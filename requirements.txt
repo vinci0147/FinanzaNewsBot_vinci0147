@@ -1,5 +1,7 @@
+python-telegram-bot
 flask
 requests
 feedparser
 yfinance
 schedule
+beautifulsoup4
