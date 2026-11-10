@@ -6,7 +6,7 @@ import feedparser
 import requests
 from bs4 import BeautifulSoup
 import yfinance
-from flask import Thread, Flask
+from flask import Flask, threading
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 
@@ -14,12 +14,12 @@ from telegram.ext import Application, CommandHandler, CallbackQueryHandler, Cont
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# --- CONFIGURAZIONE TOKEN E CHAT ---
-TOKEN = os.environ.get("TOKEN", os.environ.get("TELEGRAM_TOKEN", "INSERISCI_QUI_IL_TUO_TOKEN"))
-CHAT_ID = os.environ.get("CHAT_ID", "INSERISCI_QUI_IL_TUO_CHAT_ID")
+# --- CONFIGURAZIONE TOKEN E CHAT (CONFIGURATI) ---
+TOKEN = "8858283509:AAFS-hvhjIbIwXvk5olT9H7OBNFUlzwG7UM"
+CHAT_ID = "6109968411"  # Estratto dai tuoi log precedenti
 ULTIMO_LINK_INVIATO = None
 
-# --- MICRO SERVER FLASK PER EVITARE IL TIMEOUT SU RENDER ---
+# --- MICRO SERVER FLASK PER MANTENERE LA PORTA ATTIVA SU RENDER ---
 app_flask = Flask(__name__)
 
 @app_flask.route('/')
@@ -125,8 +125,7 @@ async def loop_notizie_background(bot):
     await asyncio.sleep(15)
     while True:
         try:
-            target_chat = CHAT_ID
-            if target_chat and target_chat != "INSERISCI_QUI_IL_TUO_CHAT_ID":
+            if CHAT_ID:
                 for feed_url in RSS_FEEDS:
                     feed = feedparser.parse(feed_url)
                     if feed.entries:
@@ -143,7 +142,7 @@ async def loop_notizie_background(bot):
                                     f"⚡ *Impatto:* {sentiment}\n\n"
                                     f"🔗 [👉 Leggi l'articolo completo]({entry.link})"
                                 )
-                                await bot.send_message(chat_id=target_chat, text=msg, parse_mode="Markdown")
+                                await bot.send_message(chat_id=CHAT_ID, text=msg, parse_mode="Markdown")
                                 ULTIMO_LINK_INVIATO = entry.link
                                 break
         except Exception as e:
@@ -269,7 +268,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == "gbpusd":
         await analizza_asset("GBPUSD=X", "GBP/USD", chat_id, context)
     elif data == "usdjpy":
-        await analizza_asset("USDJPY=X", "USD/JPY", chat_id, context)
+        await analizza_asset("JPY=X", "USD/JPY", chat_id, context)
     elif data == "usdchf":
         await analizza_asset("CHF=X", "USD/CHF", chat_id, context)
     elif data == "audusd":
@@ -293,11 +292,6 @@ async def post_init(application: Application):
 
 # --- MAIN RUNNER ---
 def main():
-    if not TOKEN or TOKEN == "INSERISCI_QUI_IL_TUO_TOKEN":
-        logger.error("Token del bot Telegram non configurato!")
-        return
-
-    # Avvia Flask in un thread separato per mantenere la porta aperta su Render
     from threading import Thread
     flask_thread = Thread(target=run_flask, daemon=True)
     flask_thread.start()
