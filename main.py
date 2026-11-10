@@ -1,23 +1,22 @@
-import os
+ìimport os
 import time
-from threading import Thread
+import asyncio
+import logging
 import feedparser
 import requests
 from bs4 import BeautifulSoup
-from flask import Flask
-import schedule
 import yfinance
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 
-# --- CONFIGURAZIONE E VAR GLOBALI ---
+# Configurazione logging
+logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# --- CONFIGURAZIONE TOKEN E CHAT ---
 TOKEN = os.environ.get("TELEGRAM_TOKEN", "INSERISCI_QUI_IL_TUO_TOKEN")
 CHAT_ID = os.environ.get("CHAT_ID", "INSERISCI_QUI_IL_TUO_CHAT_ID")
 ULTIMO_LINK_INVIATO = None
-
-app = Flask(__name__)
-
-@app.route('/')
-def home():
-    return "Bot Finanziario Online!"
 
 # --- FONTI RSS MULTI-FONTE ---
 RSS_FEEDS = [
@@ -28,41 +27,51 @@ RSS_FEEDS = [
     "https://www.milanofinanza.it/rss/home"
 ]
 
-def invia_messaggio_con_menu(chat_dest=None):
-    dest = chat_dest if chat_dest else CHAT_ID
-    url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
-    
-    tastiera = {
-        "inline_keyboard": [
-            [{"text": "📅 Calendario Macro Live", "callback_data": "cal_oggi"}, {"text": "📰 Ultime Notizie", "callback_data": "news_oggi"}],
-            [{"text": "🥇 Oro (XAUUSD)", "callback_data": "oro"}, {"text": "🪙 Bitcoin (BTC)", "callback_data": "btc"}],
-            [{"text": "💶 EUR/USD", "callback_data": "eurusd"}, {"text": "💷 GBP/USD", "callback_data": "gbpusd"}],
-            [{"text": "💴 USD/JPY", "callback_data": "usdjpy"}, {"text": "🇨🇭 USD/CHF", "callback_data": "usdchf"}],
-            [{"text": "🇦🇺 AUD/USD", "callback_data": "audusd"}, {"text": "🇨🇦 USD/CAD", "callback_data": "usdcad"}],
-            [{"text": "🇳🇿 NZD/USD", "callback_data": "nzdusd"}, {"text": "🇪🇺 EUR/GBP", "callback_data": "eurgbp"}],
-            [{"text": "📖 Guida & Info Bot", "callback_data": "guida"}]
+# --- TASTIERA DEL MENU PRINCIPALE ---
+def get_main_keyboard():
+    keyboard = [
+        [
+            InlineKeyboardButton("📅 Calendario Macro Live", callback_data="cal_oggi"),
+            InlineKeyboardButton("📰 Ultime Notizie", callback_data="news_oggi")
+        ],
+        [
+            InlineKeyboardButton("🥇 Oro (XAUUSD)", callback_data="oro"),
+            InlineKeyboardButton("🪙 Bitcoin (BTC)", callback_data="btc")
+        ],
+        [
+            InlineKeyboardButton("💶 EUR/USD", callback_data="eurusd"),
+            InlineKeyboardButton("💷 GBP/USD", callback_data="gbpusd")
+        ],
+        [
+            InlineKeyboardButton("💴 USD/JPY", callback_data="usdjpy"),
+            InlineKeyboardButton("🇨🇭 USD/CHF", callback_data="usdchf")
+        ],
+        [
+            InlineKeyboardButton("🇦🇺 AUD/USD", callback_data="audusd"),
+            InlineKeyboardButton("🇨🇦 USD/CAD", callback_data="usdcad")
+        ],
+        [
+            InlineKeyboardButton("🇳🇿 NZD/USD", callback_data="nzdusd"),
+            InlineKeyboardButton("🇪🇺 EUR/GBP", callback_data="eurgbp")
+        ],
+        [
+            InlineKeyboardButton("📖 Guida & Info Bot", callback_data="guida")
         ]
-    }
-    
-    payload = {
-        "chat_id": dest,
-        "text": "📈 **PANNELLO FOREX, CRYPTO & MACRO NEWS** 📉\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n💡 Seleziona un'opzione dai pulsanti sottostanti: 🔥",
-        "reply_markup": tastiera,
-        "parse_mode": "Markdown"
-    }
-    try:
-        requests.post(url, json=payload, timeout=10)
-    except Exception as e:
-        print(f"Errore invio menu: {e}")
+    ]
+    return InlineKeyboardMarkup(keyboard)
 
-def invia_messaggio(testo, chat_dest=None):
-    dest = chat_dest if chat_dest else CHAT_ID
-    url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
-    payload = {"chat_id": dest, "text": testo, "parse_mode": "Markdown", "disable_web_page_preview": False}
+# --- INVIO MESSAGGI ---
+async def invia_testo(context: ContextTypes.DEFAULT_TYPE, chat_id, testo):
     try:
-        requests.post(url, json=payload, timeout=10)
+        await context.bot.send_message(chat_id=chat_id, text=testo, parse_mode="Markdown", disable_web_page_preview=False)
     except Exception as e:
-        print(f"Errore invio Telegram: {e}")
+        logger.error(f"Errore invio messaggio Telegram: {e}")
+
+# --- COMANDO /start o /menu ---
+async def start_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.effective_chat.id
+    text = "📈 **PANNELLO FOREX, CRYPTO & MACRO NEWS** 📉\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n💡 Seleziona un'opzione dai pulsanti sottostanti: 🔥"
+    await update.message.reply_text(text, reply_markup=get_main_keyboard(), parse_mode="Markdown")
 
 # --- FILTRO NOTIZIE MACRO ---
 def analizza_impatto_notizia(titolo):
@@ -105,17 +114,21 @@ def analizza_impatto_notizia(titolo):
     else:
         return None, None
 
-def controlla_notizie(chat_dest=None):
+# --- CONTROLLO NOTIZIE AUTOMATICO ---
+async def controlla_notizie_automatico(context: ContextTypes.DEFAULT_TYPE):
     global ULTIMO_LINK_INVIATO
+    target_chat = CHAT_ID
+    if not target_chat:
+        return
     try:
         for feed_url in RSS_FEEDS:
             feed = feedparser.parse(feed_url)
             if feed.entries:
-                for entry in feed.entries[:5]:
+                for entry in feed.entries[:3]:
                     asset_target, sentiment = analizza_impatto_notizia(entry.title)
                     if asset_target is not None:
-                        if chat_dest is None and entry.link == ULTIMO_LINK_INVIATO:
-                            return
+                        if entry.link == ULTIMO_LINK_INVIATO:
+                            continue
                         
                         msg = (
                             f"🚨 **NOTIZIA TARGET: {asset_target}** 🚨\n"
@@ -124,17 +137,14 @@ def controlla_notizie(chat_dest=None):
                             f"⚡ *Impatto:* {sentiment}\n\n"
                             f"🔗 [👉 Leggi l'articolo completo]({entry.link})"
                         )
-                        invia_messaggio(msg, chat_dest)
-                        
-                        if chat_dest is None:
-                            ULTIMO_LINK_INVIATO = entry.link
+                        await context.bot.send_message(chat_id=target_chat, text=msg, parse_mode="Markdown")
+                        ULTIMO_LINK_INVIATO = entry.link
                         break
     except Exception as e:
-        print(f"Errore RSS: {e}")
+        logger.error(f"Errore controllo RSS automatico: {e}")
 
-# --- CALENDARIO ECONOMICO DINAMICO IN TEMPO REALE ---
-def scarica_calendario_live(chat_dest=None):
-    # Widget ufficiale Investing in tempo reale (Europa, USA, Canada, UK, ecc.)
+# --- CALENDARIO MACRO LIVE ---
+async def scarica_calendario_live(chat_id, context: ContextTypes.DEFAULT_TYPE):
     url = "https://sslecal2.investing.com/?columns=exc_flags,exc_currency,exc_importance,exc_actual,exc_forecast,exc_previous&features=datepicker,timezone&countries=25,32,6,37,22,17,35,4,39,14,48,10,43,21,38,36,26,5,110,12,72&calType=week&timeZone=16&lang=9"
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -164,7 +174,6 @@ def scarica_calendario_live(chat_dest=None):
                 valuta = curr_td.get_text(strip=True) if curr_td else ""
                 titolo = title_td.get_text(strip=True) if title_td else ""
                 
-                # Prende i dati effettivi se pubblicati in tempo reale
                 attivo = act_td.get_text(strip=True) if act_td else ""
                 previsto = fore_td.get_text(strip=True) if fore_td else ""
                 precedente = prev_td.get_text(strip=True) if prev_td else ""
@@ -180,14 +189,14 @@ def scarica_calendario_live(chat_dest=None):
                 msg += "🟢 *Nessun evento in corso o widget in aggiornamento.*\n"
                 
             msg += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n📌 *Dati aggiornati in tempo reale dal server.*"
-            invia_messaggio(msg, chat_dest)
+            await context.bot.send_message(chat_id=chat_id, text=msg, parse_mode="Markdown")
         else:
-            invia_messaggio("⚠️ Impossibile scaricare il calendario in tempo reale.", chat_dest)
+            await context.bot.send_message(chat_id=chat_id, text="⚠️ Impossibile scaricare il calendario in tempo reale.")
     except Exception as e:
-        print(f"Errore calendario live: {e}")
-        invia_messaggio("⚠️ Errore di connessione al calendario macro.", chat_dest)
+        logger.error(f"Errore calendario live: {e}")
+        await context.bot.send_message(chat_id=chat_id, text="⚠️ Errore di connessione al calendario macro.")
 
-def notizie_sette_giorni(chat_dest=None):
+async def notizie_sette_giorni(chat_id, context: ContextTypes.DEFAULT_TYPE):
     try:
         msg = "📰 **ULTIMISSIME NOTIZIE SUI TUOI ASSET** 📊\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
         trovate = 0
@@ -205,14 +214,14 @@ def notizie_sette_giorni(chat_dest=None):
                 break
                 
         if trovate > 0:
-            invia_messaggio(msg, chat_dest)
+            await context.bot.send_message(chat_id=chat_id, text=msg, parse_mode="Markdown")
         else:
-            invia_messaggio("🟢 Nessuna notizia spazzatura filtrata; monitoraggio attivo solo sui tuoi asset.", chat_dest)
+            await context.bot.send_message(chat_id=chat_id, text="🟢 Nessuna notizia filtrata di recente sui tuoi asset.")
     except Exception as e:
-        print(f"Errore notizie: {e}")
+        logger.error(f"Errore notizie: {e}")
 
 # --- ANALISI TECNICA ASSET ---
-def analizza_asset(simbolo, nome_asset, chat_dest=None):
+async def analizza_asset(simbolo, nome_asset, chat_id, context: ContextTypes.DEFAULT_TYPE):
     try:
         ticker = yfinance.Ticker(simbolo)
         info = ticker.fast_info
@@ -231,83 +240,63 @@ def analizza_asset(simbolo, nome_asset, chat_dest=None):
             f"⚙️ **Strategia:** Multi-TP & Break-Even attivo\n"
             f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
         )
-        invia_messaggio(msg, chat_dest)
+        await context.bot.send_message(chat_id=chat_id, text=msg, parse_mode="Markdown")
     except Exception as e:
-        print(f"Errore analisi asset {simbolo}: {e}")
-        invia_messaggio(f"⚠️ Impossibile recuperare la quotazione di {nome_asset}.", chat_dest)
+        logger.error(f"Errore analisi asset {simbolo}: {e}")
+        await context.bot.send_message(chat_id=chat_id, text=f"⚠️ Impossibile recuperare la quotazione di {nome_asset}.")
 
-# --- TELEGRAM POLLING COMANDI ---
-def ascolta_comandi():
-    offset = 0
-    while True:
-        try:
-            url = f"https://api.telegram.org/bot{TOKEN}/getUpdates?offset={offset}&timeout=10"
-            resp = requests.get(url, timeout=15).json()
-            
-            if resp.get("ok"):
-                for result in resp.get("result", []):
-                    offset = result["update_id"] + 1
-                    
-                    if "message" in result:
-                        msg = result["message"]
-                        chat_id = msg["chat"]["id"]
-                        text = msg.get("text", "")
-                        
-                        if text in ["/start", "/menu"]:
-                            invia_messaggio_con_menu(chat_id)
-                            
-                    elif "callback_query" in result:
-                        query = result["callback_query"]
-                        chat_id = query["message"]["chat"]["id"]
-                        data_callback = query["data"]
+# --- GESTIONE PULSANTI INLINE ---
+async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    chat_id = query.message.chat.id
+    data = query.data
 
-                        callback_url = f"https://api.telegram.org/bot{TOKEN}/answerCallbackQuery"
-                        requests.post(callback_url, json={"callback_query_id": query["id"], "text": "⚡ Elaborazione dati live..."})
+    if data == "btc":
+        await analizza_asset("BTC-USD", "BITCOIN (BTC)", chat_id, context)
+    elif data == "oro":
+        await analizza_asset("GC=F", "ORO (XAUUSD)", chat_id, context)
+    elif data == "eurusd":
+        await analizza_asset("EURUSD=X", "EUR/USD", chat_id, context)
+    elif data == "gbpusd":
+        await analizza_asset("GBPUSD=X", "GBP/USD", chat_id, context)
+    elif data == "usdjpy":
+        await analizza_asset("JPY=X", "USD/JPY", chat_id, context)
+    elif data == "usdchf":
+        await analizza_asset("CHF=X", "USD/CHF", chat_id, context)
+    elif data == "audusd":
+        await analizza_asset("AUDUSD=X", "AUD/USD", chat_id, context)
+    elif data == "usdcad":
+        await analizza_asset("CAD=X", "USD/CAD", chat_id, context)
+    elif data == "nzdusd":
+        await analizza_asset("NZDUSD=X", "NZD/USD", chat_id, context)
+    elif data == "eurgbp":
+        await analizza_asset("EURGBP=X", "EUR/GBP", chat_id, context)
+    elif data == "news_oggi":
+        await notizie_sette_giorni(chat_id, context)
+    elif data == "cal_oggi":
+        await scarica_calendario_live(chat_id, context)
+    elif data == "guida":
+        await context.bot.send_message(chat_id=chat_id, text="📖 *GUIDA BOT:* Filtri macro e live attivi.", parse_mode="Markdown")
 
-                        if data_callback == "btc":
-                            analizza_asset("BTC-USD", "BITCOIN (BTC)", chat_id)
-                        elif data_callback == "oro":
-                            analizza_asset("GC=F", "ORO (XAUUSD)", chat_id)
-                        elif data_callback == "eurusd":
-                            analizza_asset("EURUSD=X", "EUR/USD", chat_id)
-                        elif data_callback == "gbpusd":
-                            analizza_asset("GBPUSD=X", "GBP/USD", chat_id)
-                        elif data_callback == "usdjpy":
-                            analizza_asset("JPY=X", "USD/JPY", chat_id)
-                        elif data_callback == "usdchf":
-                            analizza_asset("CHF=X", "USD/CHF", chat_id)
-                        elif data_callback == "audusd":
-                            analizza_asset("AUDUSD=X", "AUD/USD", chat_id)
-                        elif data_callback == "usdcad":
-                            analizza_asset("CAD=X", "USD/CAD", chat_id)
-                        elif data_callback == "nzdusd":
-                            analizza_asset("NZDUSD=X", "NZD/USD", chat_id)
-                        elif data_callback == "eurgbp":
-                            analizza_asset("EURGBP=X", "EUR/GBP", chat_id)
-                        elif data_callback == "news_oggi":
-                            controlla_notizie(chat_id)
-                            notizie_sette_giorni(chat_id)
-                        elif data_callback == "cal_oggi" or data_callback == "cal_7gg":
-                            # Richiama solo i dati in tempo reale senza testi fissi
-                            scarica_calendario_live(chat_id)
-                        elif data_callback == "guida":
-                            invia_messaggio("📖 *GUIDA BOT:* Filtro anti-spazzatura aziendale attivo.", chat_id)
+# --- MAIN RUNNER ---
+def main():
+    if not TOKEN or TOKEN == "INSERISCI_QUI_IL_TUO_TOKEN":
+        logger.error("Token del bot Telegram non configurato!")
+        return
 
-        except Exception as e:
-            print(f"Errore ascolto: {e}")
-        time.sleep(1)
+    application = Application.builder().token(TOKEN).build()
 
-# --- WORKER BACKGROUND ---
-def worker():
-    time.sleep(5)
-    invia_messaggio("🚀 *SERVER ONLINE:* Calendario Macro Live e Filtri attivi! 🟢🔥")
-    Thread(target=ascolta_comandi, daemon=True).start()
-    schedule.every(15).minutes.do(lambda: controlla_notizie())
-    
-    while True:
-        schedule.run_pending()
-        time.sleep(1)
+    # Registrazione handler
+    application.add_handler(CommandHandler(["start", "menu"], start_menu))
+    application.add_handler(CallbackQueryHandler(button_handler))
+
+    # Job queue per il controllo notizie automatico ogni 15 minuti
+    job_queue = application.job_queue
+    job_queue.run_repeating(controlla_notizie_automatico, interval=900, first=10)
+
+    logger.info("🚀 Bot Telegram avviato correttamente in modalità nativa asincrona!")
+    application.run_polling()
 
 if __name__ == "__main__":
-    Thread(target=worker, daemon=True).start()
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+    main()
