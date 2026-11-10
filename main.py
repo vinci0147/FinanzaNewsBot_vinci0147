@@ -228,7 +228,7 @@ async def notizie_sette_giorni(chat_id, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         logger.error(f"Errore notizie: {e}")
 
-# --- ANALISI TECNICA ASSET ---
+# --- QUOTAZIONE E PREZZO ASSET (PULITO) ---
 async def analizza_asset(simbolo, nome_asset, chat_id, context: ContextTypes.DEFAULT_TYPE):
     try:
         ticker = yfinance.Ticker(simbolo)
@@ -242,10 +242,8 @@ async def analizza_asset(simbolo, nome_asset, chat_id, context: ContextTypes.DEF
         msg = (
             f"📊 **ANALISI: {nome_asset}** 💎\n"
             f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-            f"💰 **Prezzo:** {prezzo:.4f}\n"
+            f"💰 **Prezzo Attuale:** {prezzo:.4f}\n"
             f"{emoji_var} **Variazione 24h:** {variazione:+.2f}%\n"
-            f"🤖 **Stato Bot Grid:** Operativo in Demo\n"
-            f"⚙️ **Strategia:** Multi-TP & Break-Even attivo\n"
             f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
         )
         await context.bot.send_message(chat_id=chat_id, text=msg, parse_mode="Markdown")
@@ -293,7 +291,6 @@ async def post_init(application: Application):
 
 # --- MAIN RUNNER ---
 def main():
-    # Avvia Flask in un thread daemon separato per rispondere subito ai ping HTTP di Render
     flask_thread = Thread(target=run_flask, daemon=True)
     flask_thread.start()
     logger.info("Server web Flask avviato in background sulla porta corretta.")
