@@ -14,7 +14,7 @@ logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s
 logger = logging.getLogger(__name__)
 
 # --- CONFIGURAZIONE TOKEN E CHAT ---
-TOKEN = os.environ.get("TELEGRAM_TOKEN", "INSERISCI_QUI_IL_TUO_TOKEN")
+TOKEN = os.environ.get("TOKEN", os.environ.get("TELEGRAM_TOKEN", "INSERISCI_QUI_IL_TUO_TOKEN"))
 CHAT_ID = os.environ.get("CHAT_ID", "INSERISCI_QUI_IL_TUO_CHAT_ID")
 ULTIMO_LINK_INVIATO = None
 
@@ -59,13 +59,6 @@ def get_main_keyboard():
         ]
     ]
     return InlineKeyboardMarkup(keyboard)
-
-# --- INVIO MESSAGGI ---
-async def invia_testo(context: ContextTypes.DEFAULT_TYPE, chat_id, testo):
-    try:
-        await context.bot.send_message(chat_id=chat_id, text=testo, parse_mode="Markdown", disable_web_page_preview=False)
-    except Exception as e:
-        logger.error(f"Errore invio messaggio Telegram: {e}")
 
 # --- COMANDO /start o /menu ---
 async def start_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -114,34 +107,37 @@ def analizza_impatto_notizia(titolo):
     else:
         return None, None
 
-# --- CONTROLLO NOTIZIE AUTOMATICO ---
-async def controlla_notizie_automatico(context: ContextTypes.DEFAULT_TYPE):
+# --- CONTROLLO NOTIZIE AUTOMATICO IN BACKGROUND ---
+async def loop_notizie_background(bot):
     global ULTIMO_LINK_INVIATO
-    target_chat = CHAT_ID
-    if not target_chat:
-        return
-    try:
-        for feed_url in RSS_FEEDS:
-            feed = feedparser.parse(feed_url)
-            if feed.entries:
-                for entry in feed.entries[:3]:
-                    asset_target, sentiment = analizza_impatto_notizia(entry.title)
-                    if asset_target is not None:
-                        if entry.link == ULTIMO_LINK_INVIATO:
-                            continue
-                        
-                        msg = (
-                            f"🚨 **NOTIZIA TARGET: {asset_target}** 🚨\n"
-                            f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-                            f"📌 *Titolo:* {entry.title}\n\n"
-                            f"⚡ *Impatto:* {sentiment}\n\n"
-                            f"🔗 [👉 Leggi l'articolo completo]({entry.link})"
-                        )
-                        await context.bot.send_message(chat_id=target_chat, text=msg, parse_mode="Markdown")
-                        ULTIMO_LINK_INVIATO = entry.link
-                        break
-    except Exception as e:
-        logger.error(f"Errore controllo RSS automatico: {e}")
+    await asyncio.sleep(15) # Attesa iniziale avvio bot
+    while True:
+        try:
+            target_chat = CHAT_ID
+            if target_chat and target_chat != "INSERISCI_QUI_IL_TUO_CHAT_ID":
+                for feed_url in RSS_FEEDS:
+                    feed = feedparser.parse(feed_url)
+                    if feed.entries:
+                        for entry in feed.entries[:3]:
+                            asset_target, sentiment = analizza_impatto_notizia(entry.title)
+                            if asset_target is not None:
+                                if entry.link == ULTIMO_LINK_INVIATO:
+                                    continue
+                                
+                                msg = (
+                                    f"🚨 **NOTIZIA TARGET: {asset_target}** 🚨\n"
+                                    f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                                    f"📌 *Titolo:* {entry.title}\n\n"
+                                    f"⚡ *Impatto:* {sentiment}\n\n"
+                                    f"🔗 [👉 Leggi l'articolo completo]({entry.link})"
+                                )
+                                await bot.send_message(chat_id=target_chat, text=msg, parse_mode="Markdown")
+                                ULTIMO_LINK_INVIATO = entry.link
+                                break
+        except Exception as e:
+            logger.error(f"Errore controllo RSS automatico: {e}")
+        
+        await asyncio.sleep(900) # Controlla ogni 15 minuti
 
 # --- CALENDARIO MACRO LIVE ---
 async def scarica_calendario_live(chat_id, context: ContextTypes.DEFAULT_TYPE):
@@ -279,21 +275,21 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == "guida":
         await context.bot.send_message(chat_id=chat_id, text="📖 *GUIDA BOT:* Filtri macro e live attivi.", parse_mode="Markdown")
 
+async def post_init(application: Application):
+    # Avvia il task in background per le notizie automatiche senza usare job_queue
+    asyncio.create_task(loop_notizie_background(application.bot))
+    logger.info("Task in background per le notizie avviato con successo.")
+
 # --- MAIN RUNNER ---
 def main():
     if not TOKEN or TOKEN == "INSERISCI_QUI_IL_TUO_TOKEN":
         logger.error("Token del bot Telegram non configurato!")
         return
 
-    application = Application.builder().token(TOKEN).build()
+    application = Application.builder().token(TOKEN).post_init(post_init).build()
 
-    # Registrazione handler
     application.add_handler(CommandHandler(["start", "menu"], start_menu))
     application.add_handler(CallbackQueryHandler(button_handler))
-
-    # Job queue per il controllo notizie automatico ogni 15 minuti
-    job_queue = application.job_queue
-    job_queue.run_repeating(controlla_notizie_automatico, interval=900, first=10)
 
     logger.info("🚀 Bot Telegram avviato correttamente in modalità nativa asincrona!")
     application.run_polling()
