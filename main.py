@@ -1,56 +1,71 @@
-async def scarica_calendario_live(chat_id, context: ContextTypes.DEFAULT_TYPE):
-    url = "https://sslecal2.investing.com/?columns=exc_flags,exc_currency,exc_importance,exc_actual,exc_forecast,exc_previous&features=datepicker,timezone&countries=25,32,6,37,22,17,35,4,39,14,48,10,43,21,38,36,26,5,110,12,72&calType=week&timeZone=16&lang=9"
-    
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-        "Accept-Language": "it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7",
-        "Referer": "https://it.investing.com/",
-        "X-Requested-With": "XMLHttpRequest"
-    }
-    
-    try:
-        response = requests.get(url, headers=headers, timeout=20)
-        if response.status_code == 200:
-            soup = BeautifulSoup(response.text, 'html.parser')
-            eventi = soup.find_all('tr', id=lambda x: x and x.startswith('eventRowId_'))
+import os
+import time
+import asyncio
+import logging
+import feedparser
+import requests
+from bs4 import BeautifulSoup
+import yfinance
+from flask import Flask
+from threading import Thread
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
+
+# Configurazione logging
+logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# --- CONFIGURAZIONE TOKEN E CHAT ---
+TOKEN = "8858283509:AAFS-hvhjIbIwXvk5olT9H7OBNFUlzwG7UM"
+CHAT_ID = "6109968411"
+ULTIMO_LINK_INVIATO = None
+
+# --- MICRO SERVER FLASK PER RENDER ---
+app_flask = Flask(__name__)
+
+@app_flask.route('/')
+def health_check():
+    return "Bot Telegram Finanziario Online e Operativo! 🟢", 200
+
+def run_flask():
+    port = int(os.environ.get("PORT", 10000))
+    # Disabilitiamo i log di Werkzeug per pulire la console di Render
+    log = logging.getLogger('werkzeug')
+    log.setLevel(logging.ERROR)
+    app_flask.run(host="0.0.0.0", port=port, debug=False, use_reloader=False)
+
+# --- FONTI RSS MULTI-FONTE ---
+RSS_FEEDS = [
+    "https://it.investing.com/rss/news.rss",
+    "https://it.marketscreener.com/rss/",
+    "https://www.ansa.it/sito/ansafinanza/ansafinanza_rss.xml",
+    "https://www.fxstreet.com/rss",
+    "https://www.milanofinanza.it/rss/home"
+]
+
+# --- TASTIERA DEL MENU PRINCIPALE ---
+def get_main_keyboard():
+    keyboard = [
+        [
+            InlineKeyboardButton("📅 Calendario Macro Live", callback_data="cal_oggi"),
+            InlineKeyboardButton("📰 Ultime Notizie", callback_data="news_oggi")
+        ],
+        [
+            InlineKeyboardButton("🥇 Oro (XAUUSD)", callback_data="oro"),
+            InlineKeyboardButton("🪙 Bitcoin (BTC)", callback_data="btc")
+        ],
+        [
+            InlineKeyboardButton("💶 EUR/USD", callback_data="eurusd"),
+            InlineKeyboardButton("💷 GBP/USD", callback_data="gbpusd")
+        ],
+        [
+            InlineKeyboardButton("💴 USD/JPY", callback_data="usdjpy"),
+            InlineKeyboardButton("🇨🇭 USD/CHF", callback_data="usdchf")
+        ],
+        [
+            InlineKeyboardButton("🇦🇺 AUD/USD", callback_data="audusd"),
+            InlineKeyboardButton("🇨🇦 USD/CAD", callback_data="usdcad")
+        ],
+        [
+            InlineKeyboardButton("🇳🇿 NZD/USD", callback_data="nzdusd"),
             
-            msg = "📅 **CALENDARIO MACROECONOMICO (LIVE)** 🎯\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-            contatore = 0
-            
-            for ev in eventi:
-                if contatore >= 10:
-                    break
-                
-                time_td = ev.find('td', class_='time')
-                curr_td = ev.find('td', class_='flagCur')
-                title_td = ev.find('td', class_='event')
-                act_td = ev.find('td', class_='act')
-                fore_td = ev.find('td', class_='fore')
-                prev_td = ev.find('td', class_='prev')
-                
-                ora = time_td.get_text(strip=True) if time_td else "--:--"
-                valuta = curr_td.get_text(strip=True) if curr_td else ""
-                titolo = title_td.get_text(strip=True) if title_td else ""
-                
-                attivo = act_td.get_text(strip=True) if act_td else ""
-                previsto = fore_td.get_text(strip=True) if fore_td else ""
-                precedente = prev_td.get_text(strip=True) if prev_td else ""
-                
-                if titolo:
-                    contatore += 1
-                    msg += f"⏰ *{ora}* [{valuta}] — **{titolo}**\n"
-                    if attivo or previsto:
-                        msg += f"   📊 Prev: {previsto} | Forecast: {attivo} | Prec: {precedente}\n"
-                    msg += "\n"
-            
-            if contatore == 0:
-                msg += "🟢 *Nessun evento in corso o widget in aggiornamento.*\n"
-                
-            msg += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n📌 *Dati aggiornati in tempo reale dal server.*"
-            await context.bot.send_message(chat_id=chat_id, text=msg, parse_mode="Markdown")
-        else:
-            await context.bot.send_message(chat_id=chat_id, text="⚠️ Errore di risposta dal server delle notizie (Codice HTTP).")
-    except Exception as e:
-        logger.error(f"Errore calendario live: {e}")
-        await context.bot.send_message(chat_id=chat_id, text="⚠️ Connessione al calendario temporaneamente non disponibile.")
