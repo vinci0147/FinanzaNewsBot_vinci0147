@@ -6,6 +6,7 @@ import feedparser
 import requests
 from bs4 import BeautifulSoup
 import yfinance
+from flask import Thread, Flask
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 
@@ -17,6 +18,17 @@ logger = logging.getLogger(__name__)
 TOKEN = os.environ.get("TOKEN", os.environ.get("TELEGRAM_TOKEN", "INSERISCI_QUI_IL_TUO_TOKEN"))
 CHAT_ID = os.environ.get("CHAT_ID", "INSERISCI_QUI_IL_TUO_CHAT_ID")
 ULTIMO_LINK_INVIATO = None
+
+# --- MICRO SERVER FLASK PER EVITARE IL TIMEOUT SU RENDER ---
+app_flask = Flask(__name__)
+
+@app_flask.route('/')
+def health_check():
+    return "Bot Telegram Operativo e Online! 🟢", 200
+
+def run_flask():
+    port = int(os.environ.get("PORT", 5000))
+    app_flask.run(host="0.0.0.0", port=port, debug=False, use_reloader=False)
 
 # --- FONTI RSS MULTI-FONTE ---
 RSS_FEEDS = [
@@ -110,7 +122,7 @@ def analizza_impatto_notizia(titolo):
 # --- CONTROLLO NOTIZIE AUTOMATICO IN BACKGROUND ---
 async def loop_notizie_background(bot):
     global ULTIMO_LINK_INVIATO
-    await asyncio.sleep(15) # Attesa iniziale avvio bot
+    await asyncio.sleep(15)
     while True:
         try:
             target_chat = CHAT_ID
@@ -137,7 +149,7 @@ async def loop_notizie_background(bot):
         except Exception as e:
             logger.error(f"Errore controllo RSS automatico: {e}")
         
-        await asyncio.sleep(900) # Controlla ogni 15 minuti
+        await asyncio.sleep(900)
 
 # --- CALENDARIO MACRO LIVE ---
 async def scarica_calendario_live(chat_id, context: ContextTypes.DEFAULT_TYPE):
@@ -257,7 +269,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == "gbpusd":
         await analizza_asset("GBPUSD=X", "GBP/USD", chat_id, context)
     elif data == "usdjpy":
-        await analizza_asset("JPY=X", "USD/JPY", chat_id, context)
+        await analizza_asset("USDJPY=X", "USD/JPY", chat_id, context)
     elif data == "usdchf":
         await analizza_asset("CHF=X", "USD/CHF", chat_id, context)
     elif data == "audusd":
@@ -276,7 +288,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await context.bot.send_message(chat_id=chat_id, text="📖 *GUIDA BOT:* Filtri macro e live attivi.", parse_mode="Markdown")
 
 async def post_init(application: Application):
-    # Avvia il task in background per le notizie automatiche senza usare job_queue
     asyncio.create_task(loop_notizie_background(application.bot))
     logger.info("Task in background per le notizie avviato con successo.")
 
@@ -285,6 +296,12 @@ def main():
     if not TOKEN or TOKEN == "INSERISCI_QUI_IL_TUO_TOKEN":
         logger.error("Token del bot Telegram non configurato!")
         return
+
+    # Avvia Flask in un thread separato per mantenere la porta aperta su Render
+    from threading import Thread
+    flask_thread = Thread(target=run_flask, daemon=True)
+    flask_thread.start()
+    logger.info("Server web Flask avviato in background per mantenere la porta attiva.")
 
     application = Application.builder().token(TOKEN).post_init(post_init).build()
 
