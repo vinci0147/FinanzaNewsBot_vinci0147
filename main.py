@@ -6,7 +6,8 @@ import feedparser
 import requests
 from bs4 import BeautifulSoup
 import yfinance
-from flask import Flask, threading
+from flask import Flask
+from threading import Thread
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 
@@ -14,20 +15,20 @@ from telegram.ext import Application, CommandHandler, CallbackQueryHandler, Cont
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# --- CONFIGURAZIONE TOKEN E CHAT (CONFIGURATI) ---
+# --- CONFIGURAZIONE TOKEN E CHAT ---
 TOKEN = "8858283509:AAFS-hvhjIbIwXvk5olT9H7OBNFUlzwG7UM"
-CHAT_ID = "6109968411"  # Estratto dai tuoi log precedenti
+CHAT_ID = "6109968411"
 ULTIMO_LINK_INVIATO = None
 
-# --- MICRO SERVER FLASK PER MANTENERE LA PORTA ATTIVA SU RENDER ---
+# --- MICRO SERVER FLASK PER MANTENERE ATTIVO IL WEB SERVICE SU RENDER ---
 app_flask = Flask(__name__)
 
 @app_flask.route('/')
 def health_check():
-    return "Bot Telegram Operativo e Online! 🟢", 200
+    return "Bot Telegram Finanziario Online e Operativo! 🟢", 200
 
 def run_flask():
-    port = int(os.environ.get("PORT", 5000))
+    port = int(os.environ.get("PORT", 10000))
     app_flask.run(host="0.0.0.0", port=port, debug=False, use_reloader=False)
 
 # --- FONTI RSS MULTI-FONTE ---
@@ -268,7 +269,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == "gbpusd":
         await analizza_asset("GBPUSD=X", "GBP/USD", chat_id, context)
     elif data == "usdjpy":
-        await analizza_asset("JPY=X", "USD/JPY", chat_id, context)
+        await analizza_asset("USDJPY=X", "USD/JPY", chat_id, context)
     elif data == "usdchf":
         await analizza_asset("CHF=X", "USD/CHF", chat_id, context)
     elif data == "audusd":
@@ -292,10 +293,10 @@ async def post_init(application: Application):
 
 # --- MAIN RUNNER ---
 def main():
-    from threading import Thread
+    # Avvia Flask in un thread daemon separato per rispondere subito ai ping HTTP di Render
     flask_thread = Thread(target=run_flask, daemon=True)
     flask_thread.start()
-    logger.info("Server web Flask avviato in background per mantenere la porta attiva.")
+    logger.info("Server web Flask avviato in background sulla porta corretta.")
 
     application = Application.builder().token(TOKEN).post_init(post_init).build()
 
@@ -303,7 +304,7 @@ def main():
     application.add_handler(CallbackQueryHandler(button_handler))
 
     logger.info("🚀 Bot Telegram avviato correttamente in modalità nativa asincrona!")
-    application.run_polling()
+    application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == "__main__":
     main()
