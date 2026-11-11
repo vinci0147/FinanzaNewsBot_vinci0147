@@ -5,7 +5,8 @@ import logging
 import feedparser
 import requests
 from bs4 import BeautifulSoup
-import yfinance
+import yfinance as yf
+import pandas as pd
 from flask import Flask
 from threading import Thread
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
@@ -16,9 +17,10 @@ logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s
 logger = logging.getLogger(__name__)
 
 # --- CONFIGURAZIONE TOKEN E CHAT ---
-TOKEN = "8858283509:AAFS-hvhjIbIwXvk5olT9H7OBNFUlzwG7UM"
-CHAT_ID = "6109968411"
+TOKEN = os.getenv("TOKEN", "9206800753:AAGR7duKWYc1ykfKaj8olSrI4SQtrn6wM6s")
+CHAT_ID = os.getenv("CHAT_ID", "6109968411")
 ULTIMO_LINK_INVIATO = None
+ULTIMO_SEGNALE_ORO = None  # Per evitare notifiche doppie sullo stesso trend
 
 # --- MICRO SERVER FLASK PER RENDER ---
 app_flask = Flask(__name__)
@@ -45,6 +47,9 @@ RSS_FEEDS = [
 # --- TASTIERA DEL MENU PRINCIPALE ---
 def get_main_keyboard():
     keyboard = [
+        [
+            InlineKeyboardButton("🚨 Richiedi Segnale Oro Ora", callback_data="segnale_oro_dinamico")
+        ],
         [
             InlineKeyboardButton("📅 Calendario Macro Live", callback_data="cal_oggi"),
             InlineKeyboardButton("📰 Ultime Notizie", callback_data="news_oggi")
@@ -77,7 +82,7 @@ def get_main_keyboard():
 
 # --- COMANDO /start o /menu ---
 async def start_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = "📈 **PANNELLO FOREX, CRYPTO & MACRO NEWS** 📉\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n💡 Seleziona un'opzione dai pulsanti sottostanti: 🔥"
+    text = "📈 **PANNELLO FOREX, CRYPTO & MACRO NEWS** 📉\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n💡 Seleziona un'opzione dai pulsanti sottostanti (i segnali automatici sull'oro sono attivi): 🔥"
     await update.message.reply_text(text, reply_markup=get_main_keyboard(), parse_mode="Markdown")
 
 # --- FILTRO NOTIZIE MACRO ---
@@ -151,6 +156,62 @@ async def loop_notizie_background(bot):
             logger.error(f"Errore controllo RSS automatico: {e}")
         
         await asyncio.sleep(900)
+
+# --- CONTROLLO AUTOMATICO SEGNALI ORO IN BACKGROUND ---
+async def loop_segnali_oro_background(bot):
+    global ULTIMO_SEGNALE_ORO
+    await asyncio.sleep(45) # Attende l'avvio completo del bot
+    while True:
+        try:
+            if CHAT_ID:
+                ticker = yf.Ticker("GC=F")
+                hist = ticker.history(period="5d", interval="1h")
+                info = ticker.fast_info
+                prezzo_attuale = info.last_price
+                
+                # Calcolo ATR (Average True Range)
+                if not hist.empty and len(hist) > 14:
+                    high_low = hist['High'] - hist['Low']
+                    high_close = (hist['High'] - hist['Close'].shift()).abs()
+                    low_close = (hist['Low'] - hist['Close'].shift()).abs()
+                    ranges = pd.concat([high_low, high_close, low_close], axis=1)
+                    true_range = ranges.max(axis=1)
+                    atr = true_range.rolling(14).mean().iloc[-1]
+                else:
+                    atr = prezzo_attuale * 0.003
+                    
+                ema_fast = hist['Close'].ewm(span=50).mean().iloc[-1] if not hist.empty else prezzo_attuale
+                ema_slow = hist['Close'].ewm(span=200).mean().iloc[-1] if not hist.empty else prezzo_attuale
+                
+                tipo_operazione = "BUY" if ema_fast >= ema_slow else "SELL"
+                
+                # Invia il segnale in autonomia se cambia la direzione o rileva un'opportunità
+                if tipo_operazione != ULTIMO_SEGNALE_ORO:
+                    if tipo_operazione == "BUY":
+                        stop_loss = prezzo_attuale * (1 - 0.0025)  # SL Fisso -0.25%
+                        take_profit = prezzo_attuale + (atr * 1.5)  # TP Mobile ATR
+                        direzione_emoji = "🟢 BUY (Acquisto)"
+                    else:
+                        stop_loss = prezzo_attuale * (1 + 0.0025)  # SL Fisso +0.25%
+                        take_profit = prezzo_attuale - (atr * 1.5)  # TP Mobile ATR
+                        direzione_emoji = "🔴 SELL (Vendita)"
+
+                    msg = (
+                        f"🚨 **NUOVO SEGNALE ORO (XAUUSD)** 🥇\n"
+                        f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                        f"📊 **Direzione:** {direzione_emoji}\n"
+                        f"💰 **Prezzo d'Ingresso:** `{prezzo_attuale:.2f}`\n\n"
+                        f"🛑 **Stop Loss Fisso (-0.25%):** `{stop_loss:.2f}`\n"
+                        f"🎯 **Take Profit Mobile (ATR):** `{take_profit:.2f}`\n"
+                        f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                        f"⚡ *Inviato automaticamente dal bot in base al trend.*"
+                    )
+                    await bot.send_message(chat_id=CHAT_ID, text=msg, parse_mode="Markdown")
+                    ULTIMO_SEGNALE_ORO = tipo_operazione
+        except Exception as e:
+            logger.error(f"Errore loop segnale oro automatico: {e}")
+        
+        await asyncio.sleep(3600) # Controlla il mercato ogni 1 ora
 
 # --- CALENDARIO MACRO LIVE ---
 async def scarica_calendario_live(chat_id, context: ContextTypes.DEFAULT_TYPE):
@@ -235,7 +296,7 @@ async def notizie_sette_giorni(chat_id, context: ContextTypes.DEFAULT_TYPE):
 # --- QUOTAZIONE E PREZZO ASSET ---
 async def analizza_asset(simbolo, nome_asset, chat_id, context: ContextTypes.DEFAULT_TYPE):
     try:
-        ticker = yfinance.Ticker(simbolo)
+        ticker = yf.Ticker(simbolo)
         info = ticker.fast_info
         prezzo = info.last_price
         prev_close = info.previous_close
@@ -255,6 +316,51 @@ async def analizza_asset(simbolo, nome_asset, chat_id, context: ContextTypes.DEF
         logger.error(f"Errore analisi asset {simbolo}: {e}")
         await context.bot.send_message(chat_id=chat_id, text=f"⚠️ Impossibile recuperare la quotazione di {nome_asset}.")
 
+# --- SEGNALE ORO DINAMICO SU RICHIESTA ---
+async def genera_segnale_oro_dinamico(chat_id, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        ticker = yf.Ticker("GC=F")
+        hist = ticker.history(period="5d", interval="1h")
+        info = ticker.fast_info
+        prezzo_attuale = info.last_price
+        
+        if not hist.empty and len(hist) > 14:
+            high_low = hist['High'] - hist['Low']
+            high_close = (hist['High'] - hist['Close'].shift()).abs()
+            low_close = (hist['Low'] - hist['Close'].shift()).abs()
+            ranges = pd.concat([high_low, high_close, low_close], axis=1)
+            true_range = ranges.max(axis=1)
+            atr = true_range.rolling(14).mean().iloc[-1]
+        else:
+            atr = prezzo_attuale * 0.003
+            
+        ema_fast = hist['Close'].ewm(span=50).mean().iloc[-1] if not hist.empty else prezzo_attuale
+        ema_slow = hist['Close'].ewm(span=200).mean().iloc[-1] if not hist.empty else prezzo_attuale
+        
+        if ema_fast >= ema_slow:
+            stop_loss = prezzo_attuale * (1 - 0.0025)
+            take_profit = prezzo_attuale + (atr * 1.5)
+            direzione_emoji = "🟢 BUY (Acquisto)"
+        else:
+            stop_loss = prezzo_attuale * (1 + 0.0025)
+            take_profit = prezzo_attuale - (atr * 1.5)
+            direzione_emoji = "🔴 SELL (Vendita)"
+
+        msg = (
+            f"🚨 **SEGNALE ORO (XAUUSD) - MANUALE** 🥇\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"📊 **Direzione:** {direzione_emoji}\n"
+            f"💰 **Prezzo d'Ingresso:** `{prezzo_attuale:.2f}`\n\n"
+            f"🛑 **Stop Loss Fisso (-0.25%):** `{stop_loss:.2f}`\n"
+            f"🎯 **Take Profit Mobile (ATR):** `{take_profit:.2f}`\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"⚡ *Richiesta manuale istantanea.*"
+        )
+        await context.bot.send_message(chat_id=chat_id, text=msg, parse_mode="Markdown")
+    except Exception as e:
+        logger.error(f"Errore generazione segnale oro manuale: {e}")
+        await context.bot.send_message(chat_id=chat_id, text="⚠️ Impossibile calcolare il segnale in questo momento.")
+
 # --- GESTIONE PULSANTI INLINE ---
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -262,7 +368,9 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = query.message.chat.id
     data = query.data
 
-    if data == "btc":
+    if data == "segnale_oro_dinamico":
+        await genera_segnale_oro_dinamico(chat_id, context)
+    elif data == "btc":
         await analizza_asset("BTC-USD", "BITCOIN (BTC)", chat_id, context)
     elif data == "oro":
         await analizza_asset("GC=F", "ORO (XAUUSD)", chat_id, context)
@@ -287,11 +395,13 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == "cal_oggi":
         await scarica_calendario_live(chat_id, context)
     elif data == "guida":
-        await context.bot.send_message(chat_id=chat_id, text="📖 *GUIDA BOT:* Filtri macro e live attivi.", parse_mode="Markdown")
+        await context.bot.send_message(chat_id=chat_id, text="📖 *GUIDA BOT:* Invio automatico segnali oro attivo ogni ora + pulsante di controllo manuale.", parse_mode="Markdown")
 
 async def post_init(application: Application):
+    # Avvia sia il task delle notizie che il task dei segnali automatici sull'oro
     asyncio.create_task(loop_notizie_background(application.bot))
-    logger.info("Task in background per le notizie avviato con successo.")
+    asyncio.create_task(loop_segnali_oro_background(application.bot))
+    logger.info("Task in background per notizie e segnali oro automatici avviati con successo.")
 
 # --- MAIN RUNNER ---
 def main():
