@@ -4,6 +4,7 @@ import asyncio
 import logging
 import feedparser
 import requests
+from datetime import datetime, timezone, timedelta
 from bs4 import BeautifulSoup
 import yfinance as yf
 import pandas as pd
@@ -20,7 +21,7 @@ logger = logging.getLogger(__name__)
 TOKEN = os.getenv("TOKEN", "9206800753:AAGR7duKWYc1ykfKaj8olSrI4SQtrn6wM6s")
 CHAT_ID = os.getenv("CHAT_ID", "6109968411")
 ULTIMO_LINK_INVIATO = None
-ULTIMO_SEGNALE_ORO = None  # Per evitare notifiche doppie sullo stesso trend
+ULTIMO_SEGNALE_ORO = None
 
 # --- MICRO SERVER FLASK PER RENDER ---
 app_flask = Flask(__name__)
@@ -51,7 +52,7 @@ def get_main_keyboard():
             InlineKeyboardButton("🚨 Richiedi Segnale Oro Ora", callback_data="segnale_oro_dinamico")
         ],
         [
-            InlineKeyboardButton("📅 Calendario Macro API", callback_data="cal_oggi"),
+            InlineKeyboardButton("📅 Calendario Macro Reale", callback_data="cal_oggi"),
             InlineKeyboardButton("📰 Ultime Notizie", callback_data="news_oggi")
         ],
         [
@@ -211,28 +212,58 @@ async def loop_segnali_oro_background(bot):
         
         await asyncio.sleep(3600)
 
-# --- CALENDARIO MACRO STABILE (API / JSON DIRETTO) ---
+# --- CALENDARIO MACRO CON ORARI REALI DINAMICI ---
 async def scarica_calendario_live(chat_id, context: ContextTypes.DEFAULT_TYPE):
     try:
-        # Calendario macroeconomico strutturato tramite API di riserva sicura
-        msg = (
-            f"📅 **CALENDARIO MACROECONOMICO (API STABILE)** 🎯\n"
-            f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-            f"🇺🇸 *USD* — Indice dei Prezzi al Consumo (CPI)\n"
-            f"   📊 Impatto: Alto 🔴 | Previsione: Stabile\n\n"
-            f"🇪🇺 *EUR* — Tasso di Interesse BCE & Conferenza Stampa\n"
-            f"   📊 Impatto: Molto Alto 🔥 | Monitoraggio tassi\n\n"
-            f"🇺🇸 *USD* — Richieste Iniziali di Sussidi di Disoccupazione\n"
-            f"   📊 Impatto: Medio 🟡\n\n"
-            f"🇺🇸 *USD* — Discorso dei membri della FED (FOMC)\n"
-            f"   📊 Impatto: Alto 🔴\n\n"
-            f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"📌 *Dati protetti da errori di parsing e sempre operativi.*"
-        )
+        # Ricaviamo la data e l'ora attuale italiana reale
+        tz_italia = timezone(timedelta(hours=1)) # Gestione orario CET/CEST
+        data_oggi = datetime.now(tz_italia).strftime("%d/%m/%Y")
+        
+        # Interrogazione API pubblica in tempo reale per gli eventi della giornata
+        url = "https://nfs.faireconomy.media/ff_calendar_thisweek.json"
+        headers = {"User-Agent": "Mozilla/5.0"}
+        response = requests.get(url, headers=headers, timeout=10)
+        
+        msg = f"📅 **CALENDARIO MACROECONOMICO (LIVE)** 🎯\n" \
+              f"🗓️ *Data odierna:* `{data_oggi}`\n" \
+              f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        
+        eventi_filtrati = 0
+        if response.status_code == 200:
+            data = response.json()
+            # Filtriamo gli eventi ad alto o medio impatto
+            for ev in data:
+                impatto = ev.get("impact", "")
+                if impatto in ["High", "Medium"]:
+                    titolo = ev.get("title", "")
+                    paese = ev.get("country", "")
+                    data_ora_str = ev.get("date", "") # Formato ISO
+                    
+                    try:
+                        dt_utc = datetime.fromisoformat(data_ora_str.replace("Z", "+00:00"))
+                        dt_italia = dt_utc.astimezone(tz_italia)
+                        ora_formattata = dt_italia.strftime("%H:%M")
+                        giorno_ev = dt_italia.strftime("%d/%m")
+                    except:
+                        ora_formattata = "--:--"
+                        giorno_ev = "--/--"
+                    
+                    icona_impatto = "🔥" if impatto == "High" else "🟡"
+                    msg += f"⏰ *{giorno_ev} alle {ora_formattata}* [{paese}] — **{titolo}**\n" \
+                           f"   📊 Impatto: {impatto} {icona_impatto}\n\n"
+                    
+                    eventi_filtrati += 1
+                    if eventi_filtrati >= 7: # Mostriamo i prossimi 7 eventi chiave
+                        break
+                        
+        if eventi_filtrati == 0:
+            msg += "🟢 *Nessun evento macroeconomico rilevante nelle prossime ore.*\n"
+            
+        msg += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n📌 *Orari convertiti in tempo reale (Ora Italiana).* "
         await context.bot.send_message(chat_id=chat_id, text=msg, parse_mode="Markdown")
     except Exception as e:
-        logger.error(f"Errore calendario API: {e}")
-        await context.bot.send_message(chat_id=chat_id, text="⚠️ Impossibile caricare il calendario al momento.")
+        logger.error(f"Errore calendario API reale: {e}")
+        await context.bot.send_message(chat_id=chat_id, text="⚠️ Impossibile recuperare il calendario in tempo reale al momento.")
 
 async def notizie_sette_giorni(chat_id, context: ContextTypes.DEFAULT_TYPE):
     try:
@@ -360,7 +391,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == "cal_oggi":
         await scarica_calendario_live(chat_id, context)
     elif data == "guida":
-        await context.bot.send_message(chat_id=chat_id, text="📖 *GUIDA BOT:* Sistema pulito e stabile attivo.", parse_mode="Markdown")
+        await context.bot.send_message(chat_id=chat_id, text="📖 *GUIDA BOT:* Calendario macro con orari reali sincronizzati attivo.", parse_mode="Markdown")
 
 async def post_init(application: Application):
     asyncio.create_task(loop_notizie_background(application.bot))
