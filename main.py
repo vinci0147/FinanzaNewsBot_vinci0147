@@ -5,7 +5,6 @@ import logging
 import feedparser
 import requests
 from datetime import datetime, timezone, timedelta
-from bs4 import BeautifulSoup
 import yfinance as yf
 import pandas as pd
 from flask import Flask
@@ -127,10 +126,10 @@ def analizza_impatto_notizia(titolo):
     else:
         return None, None
 
-# --- CONTROLLO NOTIZIE AUTOMATICO IN BACKGROUND ---
+# --- TASK AUTOMATICO NOTIZIE IN BACKGROUND ---
 async def loop_notizie_background(bot):
     global ULTIMO_LINK_INVIATO
-    await asyncio.sleep(15)
+    await asyncio.sleep(10)
     while True:
         try:
             if CHAT_ID:
@@ -150,18 +149,18 @@ async def loop_notizie_background(bot):
                                     f"⚡ *Impatto:* {sentiment}\n\n"
                                     f"🔗 [👉 Leggi l'articolo completo]({entry.link})"
                                 )
-                                await bot.send_message(chat_id=CHAT_ID, text=msg, parse_mode="Markdown")
+                                await bot.send_message(chat_id=int(CHAT_ID), text=msg, parse_mode="Markdown")
                                 ULTIMO_LINK_INVIATO = entry.link
                                 break
         except Exception as e:
             logger.error(f"Errore controllo RSS automatico: {e}")
         
-        await asyncio.sleep(900)
+        await asyncio.sleep(600) # Controlla ogni 10 minuti
 
-# --- CONTROLLO AUTOMATICO SEGNALI ORO IN BACKGROUND ---
+# --- TASK AUTOMATICO SEGNALI ORO IN BACKGROUND ---
 async def loop_segnali_oro_background(bot):
     global ULTIMO_SEGNALE_ORO
-    await asyncio.sleep(45)
+    await asyncio.sleep(20)
     while True:
         try:
             if CHAT_ID:
@@ -205,22 +204,24 @@ async def loop_segnali_oro_background(bot):
                         f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
                         f"⚡ *Inviato automaticamente dal bot in base al trend.*"
                     )
-                    await bot.send_message(chat_id=CHAT_ID, text=msg, parse_mode="Markdown")
+                    await bot.send_message(chat_id=int(CHAT_ID), text=msg, parse_mode="Markdown")
                     ULTIMO_SEGNALE_ORO = tipo_operazione
         except Exception as e:
             logger.error(f"Errore loop segnale oro automatico: {e}")
         
-        await asyncio.sleep(3600)
-        
-        # --- CALENDARIO MACRO CON ORARI REALI DINAMICI (DEFINITIVO) ---
+        await asyncio.sleep(1800) # Controlla ogni 30 minuti
+
+# --- CALENDARIO MACRO AMERICANO (FONTE FOREX FACTORY UFFICIALE) ---
 async def scarica_calendario_live(chat_id, context: ContextTypes.DEFAULT_TYPE):
     try:
-        tz_italia = timezone(timedelta(hours=1)) # Ora italiana
+        # Orario italiano (UTC+1 o UTC+2, gestito con offset standard)
+        tz_italia = timezone(timedelta(hours=1))
+        oggi_str = datetime.now(tz_italia).strftime("%Y-%m-%d")
         data_mostrata = datetime.now(tz_italia).strftime("%d/%m/%Y")
         
-        # Sfruttiamo un endpoint JSON globale pulito e diretto per gli eventi macro
+        # Endpoint JSON ufficiale americano (Forex Factory)
         url = "https://nfs.faireconomy.media/ff_calendar_thisweek.json"
-        headers = {"User-Agent": "Mozilla/5.0"}
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
         response = requests.get(url, headers=headers, timeout=10)
         
         msg = f"📅 **CALENDARIO MACROECONOMICO (LIVE)** 🎯\n" \
@@ -230,39 +231,61 @@ async def scarica_calendario_live(chat_id, context: ContextTypes.DEFAULT_TYPE):
         eventi_filtrati = 0
         if response.status_code == 200:
             data = response.json()
-            # Mostriamo i prossimi eventi in arrivo direttamente dalla lista settimanale
             for ev in data:
-                impatto = ev.get("impact", "")
-                if impatto in ["High", "Medium"]:
-                    titolo = ev.get("title", "")
-                    paese = ev.get("country", "")
-                    data_ora_str = ev.get("date", "")
+                data_ora_str = ev.get("date", "")
+                try:
+                    dt_utc = datetime.fromisoformat(data_ora_str.replace("Z", "+00:00"))
+                    dt_italia = dt_utc.astimezone(tz_italia)
+                    giorno_ev_str = dt_italia.strftime("%Y-%m-%d")
                     
-                    try:
-                        dt_utc = datetime.fromisoformat(data_ora_str.replace("Z", "+00:00"))
-                        dt_italia = dt_utc.astimezone(tz_italia)
+                    # Se l'evento è programmato per oggi
+                    if giorno_ev_str == oggi_str:
                         ora_formattata = dt_italia.strftime("%H:%M")
-                        giorno_ev = dt_italia.strftime("%d/%m")
-                    except:
-                        ora_formattata = "--:--"
-                        giorno_ev = "--/--"
-                    
-                    icona_impatto = "🔥" if impatto == "High" else "🟡"
-                    msg += f"⏰ *{giorno_ev} alle {ora_formattata}* [{paese}] — **{titolo}**\n" \
-                           f"   📊 Impatto: {impatto} {icona_impatto}\n\n"
-                    
-                    eventi_filtrati += 1
-                    if eventi_filtrati >= 6: # Mostriamo i primi 6 eventi chiave della settimana
-                        break
+                        titolo = ev.get("title", "")
+                        paese = ev.get("country", "")
+                        impatto = ev.get("impact", "")
+                        previsto = ev.get("forecast", "N/D")
+                        precedente = ev.get("previous", "N/D")
+                        
+                        icona_impatto = "🔥" if impatto == "High" else ("🟡" if impatto == "Medium" else "🟢")
+                        msg += f"⏰ *{ora_formattata}* [{paese}] — **{titolo}**\n" \
+                               f"   📊 Impatto: {impatto} {icona_impatto} | Prev: {previsto} | Prec: {precedente}\n\n"
+                        eventi_filtrati += 1
+                except Exception as inner_e:
+                    continue
                         
         if eventi_filtrati == 0:
-            msg += "🟢 *Nessun evento macroeconomico rilevante al momento.*\n"
+            msg += "🟢 *Nessun evento macroeconomico registrato per la giornata di oggi.*\n"
             
-        msg += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n📌 *Orari sincronizzati in tempo reale (Ora Italiana).*"
+        msg += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n📌 *Dati sincronizzati in tempo reale (Ora Italiana).*"
         await context.bot.send_message(chat_id=chat_id, text=msg, parse_mode="Markdown")
     except Exception as e:
-        logger.error(f"Errore calendario API reale: {e}")
+        logger.error(f"Errore calendario API americana: {e}")
         await context.bot.send_message(chat_id=chat_id, text="⚠️ Impossibile recuperare il calendario in tempo reale al momento.")
+
+async def notizie_sette_giorni(chat_id, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        msg = "📰 **ULTIMISSIME NOTIZIE SUI TUOI ASSET** 📊\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        trovate = 0
+        for feed_url in RSS_FEEDS:
+            feed = feedparser.parse(feed_url)
+            if feed.entries:
+                for entry in feed.entries:
+                    asset_target, sentiment = analizza_impatto_notizia(entry.title)
+                    if asset_target is not None:
+                        trovate += 1
+                        msg += f"🔹 *{trovate}.* {entry.title}\n   🎯 *Asset:* {asset_target}\n   ↳ *Impatto:* {sentiment}\n\n"
+                        if trovate >= 5:
+                            break
+            if trovate >= 5:
+                break
+                
+        if trovate > 0:
+            await context.bot.send_message(chat_id=chat_id, text=msg, parse_mode="Markdown")
+        else:
+            await context.bot.send_message(chat_id=chat_id, text="🟢 Nessuna notizia filtrata di recente sui tuoi asset.")
+    except Exception as e:
+        logger.error(f"Errore notizie: {e}")
 
 # --- QUOTAZIONE E PREZZO ASSET ---
 async def analizza_asset(simbolo, nome_asset, chat_id, context: ContextTypes.DEFAULT_TYPE):
@@ -366,12 +389,13 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == "cal_oggi":
         await scarica_calendario_live(chat_id, context)
     elif data == "guida":
-        await context.bot.send_message(chat_id=chat_id, text="📖 *GUIDA BOT:* Calendario macro con orari reali sincronizzati attivo.", parse_mode="Markdown")
+        await context.bot.send_message(chat_id=chat_id, text="📖 *GUIDA BOT:* Calendario americano e task automatici attivi.", parse_mode="Markdown")
 
+# --- AVVIO ROBUSTO DEI TASK IN BACKGROUND ---
 async def post_init(application: Application):
-    asyncio.create_task(loop_notizie_background(application.bot))
-    asyncio.create_task(loop_segnali_oro_background(application.bot))
-    logger.info("Task in background avviati con successo.")
+    application.create_task(loop_notizie_background(application.bot))
+    application.create_task(loop_segnali_oro_background(application.bot))
+    logger.info("Task in background per notizie e segnali avviati correttamente.")
 
 # --- MAIN RUNNER ---
 def main():
