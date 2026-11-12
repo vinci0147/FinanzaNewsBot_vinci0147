@@ -212,13 +212,13 @@ async def loop_segnali_oro_background(bot):
         
         await asyncio.sleep(3600)
         
-# --- CALENDARIO MACRO CON ORARI REALI DINAMICI (CORRETTO) ---
+        # --- CALENDARIO MACRO CON ORARI REALI DINAMICI (DEFINITIVO) ---
 async def scarica_calendario_live(chat_id, context: ContextTypes.DEFAULT_TYPE):
     try:
         tz_italia = timezone(timedelta(hours=1)) # Ora italiana
-        oggi_str = datetime.now(tz_italia).strftime("%Y-%m-%d")
         data_mostrata = datetime.now(tz_italia).strftime("%d/%m/%Y")
         
+        # Sfruttiamo un endpoint JSON globale pulito e diretto per gli eventi macro
         url = "https://nfs.faireconomy.media/ff_calendar_thisweek.json"
         headers = {"User-Agent": "Mozilla/5.0"}
         response = requests.get(url, headers=headers, timeout=10)
@@ -230,59 +230,39 @@ async def scarica_calendario_live(chat_id, context: ContextTypes.DEFAULT_TYPE):
         eventi_filtrati = 0
         if response.status_code == 200:
             data = response.json()
+            # Mostriamo i prossimi eventi in arrivo direttamente dalla lista settimanale
             for ev in data:
-                data_ora_str = ev.get("date", "")
-                try:
-                    dt_utc = datetime.fromisoformat(data_ora_str.replace("Z", "+00:00"))
-                    dt_italia = dt_utc.astimezone(tz_italia)
-                    giorno_ev_str = dt_italia.strftime("%Y-%m-%d")
+                impatto = ev.get("impact", "")
+                if impatto in ["High", "Medium"]:
+                    titolo = ev.get("title", "")
+                    paese = ev.get("country", "")
+                    data_ora_str = ev.get("date", "")
                     
-                    # Prendiamo gli eventi di oggi
-                    if giorno_ev_str == oggi_str:
+                    try:
+                        dt_utc = datetime.fromisoformat(data_ora_str.replace("Z", "+00:00"))
+                        dt_italia = dt_utc.astimezone(tz_italia)
                         ora_formattata = dt_italia.strftime("%H:%M")
-                        titolo = ev.get("title", "")
-                        paese = ev.get("country", "")
-                        impatto = ev.get("impact", "")
-                        
-                        icona_impatto = "🔥" if impatto == "High" else ("🟡" if impatto == "Medium" else "🟢")
-                        msg += f"⏰ *{ora_formattata}* [{paese}] — **{titolo}**\n" \
-                               f"   📊 Impatto: {impatto} {icona_impatto}\n\n"
-                        eventi_filtrati += 1
-                except Exception as inner_e:
-                    continue
+                        giorno_ev = dt_italia.strftime("%d/%m")
+                    except:
+                        ora_formattata = "--:--"
+                        giorno_ev = "--/--"
+                    
+                    icona_impatto = "🔥" if impatto == "High" else "🟡"
+                    msg += f"⏰ *{giorno_ev} alle {ora_formattata}* [{paese}] — **{titolo}**\n" \
+                           f"   📊 Impatto: {impatto} {icona_impatto}\n\n"
+                    
+                    eventi_filtrati += 1
+                    if eventi_filtrati >= 6: # Mostriamo i primi 6 eventi chiave della settimana
+                        break
                         
         if eventi_filtrati == 0:
-            msg += "🟢 *Nessun evento registrato per oggi o dati in aggiornamento.*\n"
+            msg += "🟢 *Nessun evento macroeconomico rilevante al momento.*\n"
             
-        msg += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n📌 *Orari sincronizzati in tempo reale.*"
+        msg += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n📌 *Orari sincronizzati in tempo reale (Ora Italiana).*"
         await context.bot.send_message(chat_id=chat_id, text=msg, parse_mode="Markdown")
     except Exception as e:
         logger.error(f"Errore calendario API reale: {e}")
         await context.bot.send_message(chat_id=chat_id, text="⚠️ Impossibile recuperare il calendario in tempo reale al momento.")
-
-async def notizie_sette_giorni(chat_id, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        msg = "📰 **ULTIMISSIME NOTIZIE SUI TUOI ASSET** 📊\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        trovate = 0
-        for feed_url in RSS_FEEDS:
-            feed = feedparser.parse(feed_url)
-            if feed.entries:
-                for entry in feed.entries:
-                    asset_target, sentiment = analizza_impatto_notizia(entry.title)
-                    if asset_target is not None:
-                        trovate += 1
-                        msg += f"🔹 *{trovate}.* {entry.title}\n   🎯 *Asset:* {asset_target}\n   ↳ *Impatto:* {sentiment}\n\n"
-                        if trovate >= 5:
-                            break
-            if trovate >= 5:
-                break
-                
-        if trovate > 0:
-            await context.bot.send_message(chat_id=chat_id, text=msg, parse_mode="Markdown")
-        else:
-            await context.bot.send_message(chat_id=chat_id, text="🟢 Nessuna notizia filtrata di recente sui tuoi asset.")
-    except Exception as e:
-        logger.error(f"Errore notizie: {e}")
 
 # --- QUOTAZIONE E PREZZO ASSET ---
 async def analizza_asset(simbolo, nome_asset, chat_id, context: ContextTypes.DEFAULT_TYPE):
