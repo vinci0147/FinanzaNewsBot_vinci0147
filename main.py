@@ -211,55 +211,50 @@ async def loop_segnali_oro_background(bot):
             logger.error(f"Errore loop segnale oro automatico: {e}")
         
         await asyncio.sleep(3600)
-
-# --- CALENDARIO MACRO CON ORARI REALI DINAMICI ---
+        
+# --- CALENDARIO MACRO CON ORARI REALI DINAMICI (CORRETTO) ---
 async def scarica_calendario_live(chat_id, context: ContextTypes.DEFAULT_TYPE):
     try:
-        # Ricaviamo la data e l'ora attuale italiana reale
-        tz_italia = timezone(timedelta(hours=1)) # Gestione orario CET/CEST
-        data_oggi = datetime.now(tz_italia).strftime("%d/%m/%Y")
+        tz_italia = timezone(timedelta(hours=1)) # Ora italiana
+        oggi_str = datetime.now(tz_italia).strftime("%Y-%m-%d")
+        data_mostrata = datetime.now(tz_italia).strftime("%d/%m/%Y")
         
-        # Interrogazione API pubblica in tempo reale per gli eventi della giornata
         url = "https://nfs.faireconomy.media/ff_calendar_thisweek.json"
         headers = {"User-Agent": "Mozilla/5.0"}
         response = requests.get(url, headers=headers, timeout=10)
         
         msg = f"📅 **CALENDARIO MACROECONOMICO (LIVE)** 🎯\n" \
-              f"🗓️ *Data odierna:* `{data_oggi}`\n" \
+              f"🗓️ *Data odierna:* `{data_mostrata}`\n" \
               f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
         
         eventi_filtrati = 0
         if response.status_code == 200:
             data = response.json()
-            # Filtriamo gli eventi ad alto o medio impatto
             for ev in data:
-                impatto = ev.get("impact", "")
-                if impatto in ["High", "Medium"]:
-                    titolo = ev.get("title", "")
-                    paese = ev.get("country", "")
-                    data_ora_str = ev.get("date", "") # Formato ISO
+                data_ora_str = ev.get("date", "")
+                try:
+                    dt_utc = datetime.fromisoformat(data_ora_str.replace("Z", "+00:00"))
+                    dt_italia = dt_utc.astimezone(tz_italia)
+                    giorno_ev_str = dt_italia.strftime("%Y-%m-%d")
                     
-                    try:
-                        dt_utc = datetime.fromisoformat(data_ora_str.replace("Z", "+00:00"))
-                        dt_italia = dt_utc.astimezone(tz_italia)
+                    # Prendiamo gli eventi di oggi
+                    if giorno_ev_str == oggi_str:
                         ora_formattata = dt_italia.strftime("%H:%M")
-                        giorno_ev = dt_italia.strftime("%d/%m")
-                    except:
-                        ora_formattata = "--:--"
-                        giorno_ev = "--/--"
-                    
-                    icona_impatto = "🔥" if impatto == "High" else "🟡"
-                    msg += f"⏰ *{giorno_ev} alle {ora_formattata}* [{paese}] — **{titolo}**\n" \
-                           f"   📊 Impatto: {impatto} {icona_impatto}\n\n"
-                    
-                    eventi_filtrati += 1
-                    if eventi_filtrati >= 7: # Mostriamo i prossimi 7 eventi chiave
-                        break
+                        titolo = ev.get("title", "")
+                        paese = ev.get("country", "")
+                        impatto = ev.get("impact", "")
+                        
+                        icona_impatto = "🔥" if impatto == "High" else ("🟡" if impatto == "Medium" else "🟢")
+                        msg += f"⏰ *{ora_formattata}* [{paese}] — **{titolo}**\n" \
+                               f"   📊 Impatto: {impatto} {icona_impatto}\n\n"
+                        eventi_filtrati += 1
+                except Exception as inner_e:
+                    continue
                         
         if eventi_filtrati == 0:
-            msg += "🟢 *Nessun evento macroeconomico rilevante nelle prossime ore.*\n"
+            msg += "🟢 *Nessun evento registrato per oggi o dati in aggiornamento.*\n"
             
-        msg += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n📌 *Orari convertiti in tempo reale (Ora Italiana).* "
+        msg += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n📌 *Orari sincronizzati in tempo reale.*"
         await context.bot.send_message(chat_id=chat_id, text=msg, parse_mode="Markdown")
     except Exception as e:
         logger.error(f"Errore calendario API reale: {e}")
